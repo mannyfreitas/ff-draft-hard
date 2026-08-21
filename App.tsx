@@ -263,7 +263,10 @@ export default function App() {
         />
       ) : (
         <View style={styles.poolView}>
-          <TextInput value={query} onChangeText={setQuery} placeholder="Search players" placeholderTextColor="#8e938c" style={styles.searchInput} />
+          <View style={styles.searchRow}>
+            <TextInput value={query} onChangeText={setQuery} placeholder="Search players" placeholderTextColor="#8e938c" style={styles.searchInput} />
+            {query ? <Pressable accessibilityLabel="Clear player search" onPress={() => setQuery('')} style={styles.clearSearchButton}><Text style={styles.clearSearchText}>X</Text></Pressable> : null}
+          </View>
           <View style={styles.filters}>
             {(['All', 'QB', 'RB', 'WR', 'TE', 'K', 'DST'] as Position[]).map((item) => (
               <Pressable key={item} onPress={() => setPosition(item)} style={[styles.filter, position === item && styles.activeFilter]}>
@@ -425,7 +428,10 @@ const styles = StyleSheet.create({
   footerTitle: { color: '#1f2a25', fontSize: 12, fontWeight: '800', letterSpacing: 0.7, textTransform: 'uppercase' },
   footerBody: { color: '#777b73', fontSize: 14, lineHeight: 20, marginTop: 5, maxWidth: 310 },
   poolView: { flex: 1, paddingHorizontal: 24, paddingTop: 18 },
-  searchInput: { height: 46, borderWidth: 1, borderColor: '#d4d3c9', backgroundColor: '#faf9f4', borderRadius: 4, paddingHorizontal: 14, color: '#1f2a25', fontSize: 15 },
+  searchRow: { position: 'relative' },
+  searchInput: { height: 46, borderWidth: 1, borderColor: '#d4d3c9', backgroundColor: '#faf9f4', borderRadius: 4, paddingHorizontal: 14, paddingRight: 42, color: '#1f2a25', fontSize: 15 },
+  clearSearchButton: { position: 'absolute', right: 7, top: 8, height: 30, width: 30, alignItems: 'center', justifyContent: 'center', backgroundColor: '#eeece3', borderWidth: 1, borderColor: '#d4d3c9', borderRadius: 3 },
+  clearSearchText: { color: '#777b73', fontSize: 12, fontWeight: '800' },
   filters: { flexDirection: 'row', paddingVertical: 16, gap: 8 },
   filter: { borderWidth: 1, borderColor: '#d4d3c9', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 16 },
   activeFilter: { backgroundColor: '#24463d', borderColor: '#24463d' },
