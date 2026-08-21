@@ -145,9 +145,13 @@ export default function App() {
 
   const draftPlayer = (playerId: string) => {
     if (draftedIds.includes(playerId)) return;
+    const player = players.find((candidate) => candidate.id === playerId);
+    if (!player) return;
 
     setDraftedIds((current) => {
-      const openSlot = current.findIndex((draftedId) => draftedId === null);
+      const openSlot = current.findIndex((draftedId, index) => (
+        draftedId === null && rosterSlotAcceptsPlayer(rosterSlots[index], player.position)
+      ));
       if (openSlot === -1) return current;
 
       const next = [...current];
@@ -265,6 +269,9 @@ export default function App() {
             renderItem={({ item }) => {
               const isDrafted = draftedIds.includes(item.id);
               const isUnavailable = unavailableIds.includes(item.id);
+              const hasOpenRosterSlot = draftedIds.some((draftedId, index) => (
+                draftedId === null && rosterSlotAcceptsPlayer(rosterSlots[index], item.position)
+              ));
               return (
                 <View style={[styles.playerRow, isUnavailable && styles.unavailablePlayerRow]}>
                   <View style={[styles.playerAvatar, { backgroundColor: item.accent }]}><Text style={styles.avatarText}>{item.name.split(' ').map((part) => part[0]).join('').slice(0, 2)}</Text></View>
@@ -276,7 +283,7 @@ export default function App() {
                     <Pressable onPress={() => markAvailable(item.id)} style={styles.unavailableButton}><Text style={styles.unavailableButtonText}>UNMARK</Text></Pressable>
                   ) : (
                     <View style={styles.playerActions}>
-                      <Pressable disabled={!draftedIds.includes(null)} onPress={() => draftPlayer(item.id)} style={[styles.draftButton, !draftedIds.includes(null) && styles.disabledDraftButton]}><Text style={styles.draftButtonText}>DRAFT</Text></Pressable>
+                      <Pressable disabled={!hasOpenRosterSlot} onPress={() => draftPlayer(item.id)} style={[styles.draftButton, !hasOpenRosterSlot && styles.disabledDraftButton]}><Text style={styles.draftButtonText}>DRAFT</Text></Pressable>
                       <Pressable onPress={() => markUnavailable(item.id)} style={styles.markUnavailableButton}><Text style={styles.markUnavailableButtonText}>TAKEN</Text></Pressable>
                     </View>
                   )}
@@ -447,6 +454,12 @@ function normalizePosition(value: string): Exclude<Position, 'All'> {
   return ['QB', 'RB', 'WR', 'TE', 'K', 'DST'].includes(position)
     ? position as Exclude<Position, 'All'>
     : 'WR';
+}
+
+function rosterSlotAcceptsPlayer(slot: string, position: Exclude<Position, 'All'>) {
+  if (slot === 'WRT') return ['RB', 'WR', 'TE'].includes(position);
+  if (slot === 'DEF') return position === 'DST';
+  return slot === position;
 }
 
 function accentForPosition(position: Exclude<Position, 'All'>) {
