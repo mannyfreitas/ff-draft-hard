@@ -36,7 +36,7 @@ export default function App() {
   const [authError, setAuthError] = useState('');
   const [authMessage, setAuthMessage] = useState('');
   const [authBusy, setAuthBusy] = useState(false);
-  const [activeView, setActiveView] = useState<'board' | 'players'>('board');
+  const [activeView, setActiveView] = useState<'board' | 'players'>('players');
   const [position, setPosition] = useState<Position>('All');
   const [query, setQuery] = useState('');
   const [availableOnly, setAvailableOnly] = useState(false);
@@ -106,6 +106,12 @@ export default function App() {
     };
 
     loadPlayers();
+  }, [session]);
+
+  useEffect(() => {
+    if (session) {
+      setActiveView(draftedIds.some(Boolean) ? 'board' : 'players');
+    }
   }, [session]);
 
   const handleAuth = async () => {
