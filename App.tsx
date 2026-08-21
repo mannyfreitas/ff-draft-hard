@@ -202,7 +202,7 @@ export default function App() {
       <View style={styles.header}>
         <View>
           <Text style={styles.eyebrow}>SUNDAY LEAGUE  /  2025</Text>
-          <Text style={styles.title}>Draft day.</Text>
+          <Text style={styles.title}>Draft Day</Text>
         </View>
         <Pressable onPress={handleSignOut} style={styles.signOutButton}><Text style={styles.signOutText}>SIGN OUT</Text></Pressable>
       </View>
@@ -215,7 +215,7 @@ export default function App() {
       </View>
 
       <View style={styles.tabs}>
-        {([['board', 'My board'], ['players', 'Player pool']] as const).map(([key, label]) => (
+        {([['board', 'My Roster'], ['players', 'Player pool']] as const).map(([key, label]) => (
           <Pressable key={key} onPress={() => setActiveView(key)} style={[styles.tab, activeView === key && styles.activeTab]}>
             <Text style={[styles.tabText, activeView === key && styles.activeTabText]}>{label}</Text>
           </Pressable>
@@ -227,15 +227,27 @@ export default function App() {
           data={rosterSlots}
           keyExtractor={(slot, index) => `${slot}-${index}`}
           contentContainerStyle={styles.listContent}
-          ListHeaderComponent={<View style={styles.sectionHeader}><Text style={styles.sectionTitle}>Your roster</Text><Text style={styles.sectionHint}>AUTOPICK OFF</Text></View>}
           renderItem={({ item, index }) => {
             const draftedPlayer = players.find((player) => player.id === draftedIds[index]);
             return (
               <View style={styles.rosterRow}>
-                <Text style={styles.slotNumber}>{String(index + 1).padStart(2, '0')}</Text>
+                {draftedPlayer ? (
+                  <View style={[styles.rosterAvatar, { backgroundColor: draftedPlayer.accent }]}>
+                    <Text style={styles.avatarText}>{draftedPlayer.name.split(' ').map((part) => part[0]).join('').slice(0, 2)}</Text>
+                  </View>
+                ) : <View style={styles.rosterAvatarPlaceholder} />}
                 <View style={styles.slotContent}>
-                  <Text style={styles.slotPosition}>{item}</Text>
-                  {draftedPlayer ? <Text style={styles.rosterPlayer}>{draftedPlayer.name} <Text style={styles.teamText}>{draftedPlayer.team}</Text></Text> : <Text style={styles.emptySlot}>Open roster spot</Text>}
+                  {draftedPlayer ? (
+                    <>
+                      <Text style={styles.rosterPlayer}>{draftedPlayer.name}</Text>
+                      <Text style={styles.rosterMeta}>{draftedPlayer.position}  /  {draftedPlayer.team}  /  BYE {draftedPlayer.bye}</Text>
+                    </>
+                  ) : (
+                    <>
+                      <Text style={styles.slotPosition}>{item}</Text>
+                      <Text style={styles.emptySlot}>Open roster spot</Text>
+                    </>
+                  )}
                 </View>
                 {draftedPlayer ? (
                   <Pressable onPress={() => undraftPlayer(index)} style={styles.undraftButton}>
@@ -390,15 +402,17 @@ const styles = StyleSheet.create({
   activeTab: { borderBottomWidth: 2, borderBottomColor: '#24463d' },
   tabText: { color: '#999b93', fontSize: 14, fontWeight: '700' },
   activeTabText: { color: '#24463d' },
-  listContent: { paddingHorizontal: 24, paddingBottom: 30 },
+  listContent: { paddingHorizontal: 24, paddingTop: 14, paddingBottom: 30 },
   sectionHeader: { paddingTop: 25, paddingBottom: 12, flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between' },
   sectionTitle: { color: '#1f2a25', fontFamily: 'Georgia', fontSize: 24 },
   sectionHint: { color: '#a0a097', fontSize: 10, fontWeight: '800', letterSpacing: 0.7 },
-  rosterRow: { minHeight: 65, borderTopWidth: 1, borderTopColor: '#deddd4', flexDirection: 'row', alignItems: 'center' },
-  slotNumber: { width: 33, color: '#a0a097', fontSize: 11, fontWeight: '700' },
+  rosterRow: { minHeight: 73, borderTopWidth: 1, borderTopColor: '#deddd4', flexDirection: 'row', alignItems: 'center' },
+  rosterAvatar: { width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center', marginRight: 10 },
+  rosterAvatarPlaceholder: { width: 38, height: 38, marginRight: 10 },
   slotContent: { flex: 1 },
   slotPosition: { color: '#777b73', fontSize: 10, fontWeight: '800', letterSpacing: 1 },
   rosterPlayer: { color: '#1f2a25', fontSize: 16, fontWeight: '600', marginTop: 4 },
+  rosterMeta: { color: '#8b8e85', fontSize: 10, marginTop: 4, fontWeight: '700' },
   teamText: { color: '#92968d', fontSize: 12, fontWeight: '500' },
   emptySlot: { color: '#afb0a7', fontSize: 14, marginTop: 4 },
   filledMark: { color: '#609369', fontSize: 9, fontWeight: '800', letterSpacing: 0.8 },
