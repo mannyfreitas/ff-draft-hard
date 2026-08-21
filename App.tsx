@@ -1,6 +1,7 @@
 import { StatusBar } from 'expo-status-bar';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
+import type { Session } from '@supabase/supabase-js';
 import {
   FlatList,
   Pressable,
@@ -9,8 +10,9 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { supabase } from './lib/supabase';
 
-type Position = 'All' | 'QB' | 'RB' | 'WR' | 'TE';
+type Position = 'All' | 'QB' | 'RB' | 'WR' | 'TE' | 'K' | 'DST';
 
 type Player = {
   id: string;
@@ -23,24 +25,111 @@ type Player = {
   accent: string;
 };
 
-const players: Player[] = [
-  { id: '1', name: 'Bijan Robinson', team: 'ATL', position: 'RB', rank: 1, adp: '1.02', bye: 5, accent: '#d96b45' },
-  { id: '2', name: 'Ja\'Marr Chase', team: 'CIN', position: 'WR', rank: 2, adp: '1.03', bye: 10, accent: '#5e79c8' },
-  { id: '3', name: 'Jahmyr Gibbs', team: 'DET', position: 'RB', rank: 3, adp: '1.05', bye: 8, accent: '#d9a441' },
-  { id: '4', name: 'CeeDee Lamb', team: 'DAL', position: 'WR', rank: 4, adp: '1.06', bye: 10, accent: '#5880a8' },
-  { id: '5', name: 'Amon-Ra St. Brown', team: 'DET', position: 'WR', rank: 5, adp: '1.08', bye: 8, accent: '#d9a441' },
-  { id: '6', name: 'Jalen Hurts', team: 'PHI', position: 'QB', rank: 6, adp: '2.04', bye: 9, accent: '#74a86b' },
-  { id: '7', name: 'Brock Bowers', team: 'LV', position: 'TE', rank: 7, adp: '2.06', bye: 8, accent: '#7897a9' },
-  { id: '8', name: 'Malik Nabers', team: 'NYG', position: 'WR', rank: 8, adp: '2.08', bye: 14, accent: '#6b86bd' },
-];
-
 const rosterSlots = ['QB', 'RB', 'RB', 'WR', 'WR', 'TE'];
 
 export default function App() {
+  const [session, setSession] = useState<Session | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [authMode, setAuthMode] = useState<'signIn' | 'signUp'>('signIn');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [authError, setAuthError] = useState('');
+  const [authMessage, setAuthMessage] = useState('');
+  const [authBusy, setAuthBusy] = useState(false);
   const [activeView, setActiveView] = useState<'board' | 'players'>('board');
   const [position, setPosition] = useState<Position>('All');
   const [query, setQuery] = useState('');
   const [draftedIds, setDraftedIds] = useState<string[]>([]);
+  const [players, setPlayers] = useState<Player[]>([]);
+  const [playersLoading, setPlayersLoading] = useState(true);
+  const [playersLoaded, setPlayersLoaded] = useState(false);
+  const [playersError, setPlayersError] = useState('');
+
+  useEffect(() => {
+    if (!supabase) {
+      setAuthLoading(false);
+      return;
+    }
+
+    supabase.auth.getSession().then(({ data: { session: currentSession } }) => {
+      setSession(currentSession);
+      setAuthLoading(false);
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, currentSession) => {
+      setSession(currentSession);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    if (!supabase || !session) return;
+    const client = supabase;
+
+    const loadPlayers = async () => {
+      setPlayersLoading(true);
+      setPlayersError('');
+      setPlayersLoaded(false);
+
+      const { data, error } = await client
+        .from('fantasypros_rankings')
+        .select('id, player_name, position, rank_ecr, rank_adp, payload')
+        .eq('season', 2026)
+        .eq('format', 'redraft')
+        .eq('scoring', 'HALF')
+        .order('rank_ecr', { ascending: true, nullsFirst: false });
+
+      if (error) {
+        setPlayersError(error.message);
+      } else {
+        setPlayers(data.map((ranking) => {
+          const payload = isRecord(ranking.payload) ? ranking.payload : {};
+          const playerPosition = normalizePosition(ranking.position);
+          return {
+            id: String(ranking.id),
+            name: ranking.player_name,
+            team: String(payload.team ?? payload.team_abbr ?? 'FA'),
+            position: playerPosition,
+            rank: ranking.rank_ecr ?? 0,
+            adp: ranking.rank_adp === null ? '—' : String(ranking.rank_adp),
+            bye: Number(payload.bye_week ?? payload.bye ?? 0),
+            accent: accentForPosition(playerPosition),
+          };
+        }));
+      }
+
+      setPlayersLoaded(true);
+      setPlayersLoading(false);
+    };
+
+    loadPlayers();
+  }, [session]);
+
+  const handleAuth = async () => {
+    if (!supabase) return;
+
+    setAuthBusy(true);
+    setAuthError('');
+    setAuthMessage('');
+
+    const result = authMode === 'signIn'
+      ? await supabase.auth.signInWithPassword({ email: email.trim(), password })
+      : await supabase.auth.signUp({ email: email.trim(), password });
+
+    if (result.error) {
+      setAuthError(result.error.message);
+    } else if (authMode === 'signUp' && !result.data.session) {
+      setAuthMessage('Check your email to confirm your account, then sign in.');
+      setAuthMode('signIn');
+    }
+
+    setAuthBusy(false);
+  };
+
+  const handleSignOut = async () => {
+    await supabase?.auth.signOut();
+  };
 
   const availablePlayers = useMemo(
     () => players.filter((player) => {
@@ -48,7 +137,7 @@ export default function App() {
       const matchesQuery = player.name.toLowerCase().includes(query.toLowerCase());
       return matchesPosition && matchesQuery;
     }),
-    [position, query],
+    [players, position, query],
   );
 
   const draftPlayer = (playerId: string) => {
@@ -61,6 +150,25 @@ export default function App() {
     <SafeAreaProvider>
       <SafeAreaView edges={['top']} style={styles.safeArea}>
         <StatusBar style="dark" />
+        {authLoading ? (
+          <View style={styles.authLoading}><Text style={styles.authLoadingText}>Loading your league...</Text></View>
+        ) : !supabase ? (
+          <AuthSetup />
+        ) : !session ? (
+          <AuthScreen
+            authBusy={authBusy}
+            authError={authError}
+            authMessage={authMessage}
+            authMode={authMode}
+            email={email}
+            password={password}
+            onAuth={handleAuth}
+            onEmailChange={setEmail}
+            onModeChange={(mode) => { setAuthMode(mode); setAuthError(''); setAuthMessage(''); }}
+            onPasswordChange={setPassword}
+          />
+        ) : (
+          <>
       <View style={styles.header}>
         <View>
           <Text style={styles.eyebrow}>SUNDAY LEAGUE  /  2025</Text>
@@ -70,6 +178,7 @@ export default function App() {
           <Text style={styles.roundNumber}>04</Text>
           <Text style={styles.roundLabel}>ROUND</Text>
         </View>
+        <Pressable onPress={handleSignOut} style={styles.signOutButton}><Text style={styles.signOutText}>SIGN OUT</Text></Pressable>
       </View>
 
       <View style={styles.progressTrack}>
@@ -113,7 +222,7 @@ export default function App() {
         <View style={styles.poolView}>
           <TextInput value={query} onChangeText={setQuery} placeholder="Search players" placeholderTextColor="#8e938c" style={styles.searchInput} />
           <View style={styles.filters}>
-            {(['All', 'QB', 'RB', 'WR', 'TE'] as Position[]).map((item) => (
+            {(['All', 'QB', 'RB', 'WR', 'TE', 'K', 'DST'] as Position[]).map((item) => (
               <Pressable key={item} onPress={() => setPosition(item)} style={[styles.filter, position === item && styles.activeFilter]}>
                 <Text style={[styles.filterText, position === item && styles.activeFilterText]}>{item}</Text>
               </Pressable>
@@ -122,7 +231,9 @@ export default function App() {
           <FlatList
             data={availablePlayers}
             keyExtractor={(item) => item.id}
+            extraData={[playersLoaded, playersLoading, playersError, position, query]}
             contentContainerStyle={styles.playerList}
+            ListEmptyComponent={<View style={styles.playerState}><Text style={styles.playerStateText}>{!playersLoaded || playersLoading ? 'Loading rankings...' : playersError || 'No synced rankings found.'}</Text></View>}
             renderItem={({ item }) => {
               const isDrafted = draftedIds.includes(item.id);
               return (
@@ -137,8 +248,60 @@ export default function App() {
           />
         </View>
         )}
+          </>
+        )}
       </SafeAreaView>
     </SafeAreaProvider>
+  );
+}
+
+type AuthScreenProps = {
+  authBusy: boolean;
+  authError: string;
+  authMessage: string;
+  authMode: 'signIn' | 'signUp';
+  email: string;
+  password: string;
+  onAuth: () => void;
+  onEmailChange: (value: string) => void;
+  onModeChange: (mode: 'signIn' | 'signUp') => void;
+  onPasswordChange: (value: string) => void;
+};
+
+function AuthScreen({ authBusy, authError, authMessage, authMode, email, password, onAuth, onEmailChange, onModeChange, onPasswordChange }: AuthScreenProps) {
+  const isSignIn = authMode === 'signIn';
+
+  return (
+    <View style={styles.authContainer}>
+      <Text style={styles.eyebrow}>SUNDAY LEAGUE  /  2025</Text>
+      <Text style={styles.authTitle}>Draft together.</Text>
+      <Text style={styles.authIntro}>Sign in to keep your leagues and picks ready wherever draft day takes you.</Text>
+      <View style={styles.authForm}>
+        <Text style={styles.authLabel}>EMAIL</Text>
+        <TextInput autoCapitalize="none" autoCorrect={false} keyboardType="email-address" value={email} onChangeText={onEmailChange} placeholder="you@example.com" placeholderTextColor="#8e938c" style={styles.authInput} />
+        <Text style={styles.authLabel}>PASSWORD</Text>
+        <TextInput secureTextEntry value={password} onChangeText={onPasswordChange} placeholder="At least 6 characters" placeholderTextColor="#8e938c" style={styles.authInput} />
+        {authError ? <Text style={styles.authError}>{authError}</Text> : null}
+        {authMessage ? <Text style={styles.authMessage}>{authMessage}</Text> : null}
+        <Pressable disabled={authBusy || !email || !password} onPress={onAuth} style={[styles.authButton, (authBusy || !email || !password) && styles.authButtonDisabled]}>
+          <Text style={styles.authButtonText}>{authBusy ? 'PLEASE WAIT' : isSignIn ? 'SIGN IN' : 'CREATE ACCOUNT'}</Text>
+        </Pressable>
+      </View>
+      <Pressable onPress={() => onModeChange(isSignIn ? 'signUp' : 'signIn')}>
+        <Text style={styles.authSwitch}>{isSignIn ? 'New to Sunday League? Create an account' : 'Already have an account? Sign in'}</Text>
+      </Pressable>
+    </View>
+  );
+}
+
+function AuthSetup() {
+  return (
+    <View style={styles.authContainer}>
+      <Text style={styles.eyebrow}>SUNDAY LEAGUE  /  2025</Text>
+      <Text style={styles.authTitle}>Almost ready.</Text>
+      <Text style={styles.authIntro}>Add your Supabase project values to the app environment to enable league accounts.</Text>
+      <View style={styles.setupNote}><Text style={styles.setupNoteTitle}>BACKEND SETUP NEEDED</Text><Text style={styles.setupNoteBody}>Copy .env.example to .env and add EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY.</Text></View>
+    </View>
   );
 }
 
@@ -147,7 +310,26 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#f4f1e9',
   },
+  authLoading: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  authLoadingText: { color: '#777b73', fontSize: 14 },
+  authContainer: { flex: 1, paddingHorizontal: 24, paddingTop: 76 },
+  authTitle: { color: '#1f2a25', fontFamily: 'Georgia', fontSize: 42, lineHeight: 48, marginTop: 10 },
+  authIntro: { color: '#777b73', fontSize: 16, lineHeight: 23, marginTop: 14, maxWidth: 340 },
+  authForm: { marginTop: 38 },
+  authLabel: { color: '#777b73', fontSize: 10, fontWeight: '800', letterSpacing: 1, marginBottom: 7, marginTop: 17 },
+  authInput: { height: 48, borderWidth: 1, borderColor: '#d4d3c9', backgroundColor: '#faf9f4', borderRadius: 4, paddingHorizontal: 14, color: '#1f2a25', fontSize: 15 },
+  authError: { color: '#b54e37', fontSize: 13, lineHeight: 19, marginTop: 14 },
+  authMessage: { color: '#527e5b', fontSize: 13, lineHeight: 19, marginTop: 14 },
+  authButton: { alignItems: 'center', backgroundColor: '#d96b45', borderRadius: 3, marginTop: 22, paddingVertical: 14 },
+  authButtonDisabled: { opacity: 0.45 },
+  authButtonText: { color: '#fff', fontSize: 10, fontWeight: '900', letterSpacing: 0.8 },
+  authSwitch: { color: '#24463d', fontSize: 13, fontWeight: '700', marginTop: 24 },
+  setupNote: { borderLeftWidth: 3, borderLeftColor: '#d96b45', marginTop: 38, paddingLeft: 14, paddingVertical: 2 },
+  setupNoteTitle: { color: '#1f2a25', fontSize: 11, fontWeight: '800', letterSpacing: 0.7 },
+  setupNoteBody: { color: '#777b73', fontSize: 14, lineHeight: 20, marginTop: 6, maxWidth: 330 },
   header: { paddingHorizontal: 24, paddingTop: 22, paddingBottom: 18, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
+  signOutButton: { borderWidth: 1, borderColor: '#d4d3c9', borderRadius: 3, paddingHorizontal: 8, paddingVertical: 7 },
+  signOutText: { color: '#777b73', fontSize: 8, fontWeight: '800', letterSpacing: 0.6 },
   eyebrow: { color: '#777b73', fontSize: 11, fontWeight: '700', letterSpacing: 1.5 },
   title: { color: '#1f2a25', fontFamily: 'Georgia', fontSize: 42, lineHeight: 48, marginTop: 7 },
   roundBadge: { backgroundColor: '#24463d', width: 58, height: 58, borderRadius: 29, alignItems: 'center', justifyContent: 'center' },
@@ -187,6 +369,8 @@ const styles = StyleSheet.create({
   filterText: { color: '#777b73', fontSize: 11, fontWeight: '800' },
   activeFilterText: { color: '#f4f1e9' },
   playerList: { paddingBottom: 30 },
+  playerState: { paddingVertical: 40, alignItems: 'center' },
+  playerStateText: { color: '#777b73', fontSize: 14, textAlign: 'center' },
   playerRow: { minHeight: 73, borderTopWidth: 1, borderTopColor: '#deddd4', flexDirection: 'row', alignItems: 'center', gap: 10 },
   playerAvatar: { width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center' },
   avatarText: { color: '#fff', fontSize: 11, fontWeight: '800' },
@@ -201,3 +385,26 @@ const styles = StyleSheet.create({
   draftButtonText: { color: '#fff', fontSize: 9, fontWeight: '900', letterSpacing: 0.5 },
   draftedButtonText: { color: '#777b73' },
 });
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function normalizePosition(value: string): Exclude<Position, 'All'> {
+  const position = value.toUpperCase();
+  return ['QB', 'RB', 'WR', 'TE', 'K', 'DST'].includes(position)
+    ? position as Exclude<Position, 'All'>
+    : 'WR';
+}
+
+function accentForPosition(position: Exclude<Position, 'All'>) {
+  const accents: Record<Exclude<Position, 'All'>, string> = {
+    QB: '#74a86b',
+    RB: '#d9a441',
+    WR: '#5e79c8',
+    TE: '#7897a9',
+    K: '#d96b45',
+    DST: '#5880a8',
+  };
+  return accents[position];
+}
