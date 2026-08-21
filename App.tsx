@@ -137,10 +137,12 @@ export default function App() {
     () => players.filter((player) => {
       const matchesPosition = position === 'All' || player.position === position;
       const matchesQuery = player.name.toLowerCase().includes(query.toLowerCase());
-      const matchesAvailability = !availableOnly || !unavailableIds.includes(player.id);
+      const matchesAvailability = !availableOnly || (
+        !unavailableIds.includes(player.id) && !draftedIds.includes(player.id)
+      );
       return matchesPosition && matchesQuery && matchesAvailability;
     }),
-    [availableOnly, players, position, query, unavailableIds],
+    [availableOnly, draftedIds, players, position, query, unavailableIds],
   );
 
   const draftPlayer = (playerId: string) => {
