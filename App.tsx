@@ -25,7 +25,7 @@ type Player = {
   accent: string;
 };
 
-const rosterSlots = ['QB', 'RB', 'RB', 'WR', 'WR', 'TE'];
+const rosterSlots = ['QB', 'RB', 'RB', 'WR', 'WR', 'TE', 'WRT', 'K', 'DEF'];
 
 export default function App() {
   const [session, setSession] = useState<Session | null>(null);
@@ -39,7 +39,7 @@ export default function App() {
   const [activeView, setActiveView] = useState<'board' | 'players'>('board');
   const [position, setPosition] = useState<Position>('All');
   const [query, setQuery] = useState('');
-  const [draftedIds, setDraftedIds] = useState<string[]>([]);
+  const [draftedIds, setDraftedIds] = useState<Array<string | null>>(() => Array(rosterSlots.length).fill(null));
   const [players, setPlayers] = useState<Player[]>([]);
   const [playersLoading, setPlayersLoading] = useState(true);
   const [playersLoaded, setPlayersLoaded] = useState(false);
@@ -141,9 +141,24 @@ export default function App() {
   );
 
   const draftPlayer = (playerId: string) => {
-    if (draftedIds.length < rosterSlots.length && !draftedIds.includes(playerId)) {
-      setDraftedIds((current) => [...current, playerId]);
-    }
+    if (draftedIds.includes(playerId)) return;
+
+    setDraftedIds((current) => {
+      const openSlot = current.findIndex((draftedId) => draftedId === null);
+      if (openSlot === -1) return current;
+
+      const next = [...current];
+      next[openSlot] = playerId;
+      return next;
+    });
+  };
+
+  const undraftPlayer = (rosterIndex: number) => {
+    setDraftedIds((current) => {
+      const next = [...current];
+      next[rosterIndex] = null;
+      return next;
+    });
   };
 
   return (
@@ -174,19 +189,14 @@ export default function App() {
           <Text style={styles.eyebrow}>SUNDAY LEAGUE  /  2025</Text>
           <Text style={styles.title}>Draft day.</Text>
         </View>
-        <View style={styles.roundBadge}>
-          <Text style={styles.roundNumber}>04</Text>
-          <Text style={styles.roundLabel}>ROUND</Text>
-        </View>
         <Pressable onPress={handleSignOut} style={styles.signOutButton}><Text style={styles.signOutText}>SIGN OUT</Text></Pressable>
       </View>
 
       <View style={styles.progressTrack}>
-        <View style={[styles.progressFill, { width: `${(draftedIds.length / rosterSlots.length) * 100}%` }]} />
+        <View style={[styles.progressFill, { width: `${(draftedIds.filter(Boolean).length / rosterSlots.length) * 100}%` }]} />
       </View>
       <View style={styles.progressMeta}>
-        <Text style={styles.progressText}>{draftedIds.length} of {rosterSlots.length} roster spots filled</Text>
-        <Text style={styles.pickText}>YOUR PICK  04.06</Text>
+        <Text style={styles.progressText}>{draftedIds.filter(Boolean).length} of {rosterSlots.length} roster spots filled</Text>
       </View>
 
       <View style={styles.tabs}>
@@ -212,7 +222,11 @@ export default function App() {
                   <Text style={styles.slotPosition}>{item}</Text>
                   {draftedPlayer ? <Text style={styles.rosterPlayer}>{draftedPlayer.name} <Text style={styles.teamText}>{draftedPlayer.team}</Text></Text> : <Text style={styles.emptySlot}>Open roster spot</Text>}
                 </View>
-                <Text style={draftedPlayer ? styles.filledMark : styles.emptyMark}>{draftedPlayer ? 'READY' : '—'}</Text>
+                {draftedPlayer ? (
+                  <Pressable onPress={() => undraftPlayer(index)} style={styles.undraftButton}>
+                    <Text style={styles.undraftButtonText}>UNDRAFT</Text>
+                  </Pressable>
+                ) : <Text style={styles.emptyMark}>—</Text>}
               </View>
             );
           }}
@@ -241,7 +255,7 @@ export default function App() {
                   <View style={[styles.playerAvatar, { backgroundColor: item.accent }]}><Text style={styles.avatarText}>{item.name.split(' ').map((part) => part[0]).join('').slice(0, 2)}</Text></View>
                   <View style={styles.playerInfo}><Text style={styles.playerName}>{item.name}</Text><Text style={styles.playerMeta}>{item.position}  /  {item.team}  /  BYE {item.bye}</Text></View>
                   <View style={styles.rankBlock}><Text style={styles.rankText}>#{item.rank}</Text><Text style={styles.adpText}>{item.adp} ADP</Text></View>
-                  <Pressable disabled={isDrafted || draftedIds.length >= rosterSlots.length} onPress={() => draftPlayer(item.id)} style={[styles.draftButton, isDrafted && styles.draftedButton]}><Text style={[styles.draftButtonText, isDrafted && styles.draftedButtonText]}>{isDrafted ? 'DRAFTED' : 'DRAFT'}</Text></Pressable>
+                  <Pressable disabled={isDrafted || !draftedIds.includes(null)} onPress={() => draftPlayer(item.id)} style={[styles.draftButton, isDrafted && styles.draftedButton]}><Text style={[styles.draftButtonText, isDrafted && styles.draftedButtonText]}>{isDrafted ? 'DRAFTED' : 'DRAFT'}</Text></Pressable>
                 </View>
               );
             }}
@@ -358,6 +372,8 @@ const styles = StyleSheet.create({
   emptySlot: { color: '#afb0a7', fontSize: 14, marginTop: 4 },
   filledMark: { color: '#609369', fontSize: 9, fontWeight: '800', letterSpacing: 0.8 },
   emptyMark: { color: '#c2c2b8', fontSize: 18 },
+  undraftButton: { borderWidth: 1, borderColor: '#d4d3c9', borderRadius: 3, paddingHorizontal: 8, paddingVertical: 7 },
+  undraftButtonText: { color: '#b54e37', fontSize: 8, fontWeight: '800', letterSpacing: 0.5 },
   boardFooter: { marginTop: 25, borderLeftWidth: 3, borderLeftColor: '#d96b45', paddingLeft: 14, paddingVertical: 2 },
   footerTitle: { color: '#1f2a25', fontSize: 12, fontWeight: '800', letterSpacing: 0.7, textTransform: 'uppercase' },
   footerBody: { color: '#777b73', fontSize: 14, lineHeight: 20, marginTop: 5, maxWidth: 310 },
