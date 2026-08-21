@@ -25,7 +25,7 @@ type Player = {
   accent: string;
 };
 
-const rosterSlots = ['QB', 'RB', 'RB', 'WR', 'WR', 'TE', 'WRT', 'K', 'DEF'];
+const rosterSlots = ['QB', 'RB', 'RB', 'WR', 'WR', 'TE', 'WRT', 'K', 'DEF', 'BN', 'BN', 'BN', 'BN', 'BN', 'BN'];
 
 export default function App() {
   const [session, setSession] = useState<Session | null>(null);
@@ -91,7 +91,7 @@ export default function App() {
           return {
             id: String(ranking.id),
             name: ranking.player_name,
-            team: String(payload.team ?? payload.team_abbr ?? 'FA'),
+            team: teamFromPayload(payload),
             position: playerPosition,
             rank: ranking.rank_ecr ?? 0,
             adp: ranking.rank_adp === null ? '—' : String(ranking.rank_adp),
@@ -232,7 +232,7 @@ export default function App() {
             const draftedPlayer = players.find((player) => player.id === draftedIds[index]);
             return (
               <View style={styles.rosterRow}>
-                <Text style={styles.slotNumber}>0{index + 1}</Text>
+                <Text style={styles.slotNumber}>{String(index + 1).padStart(2, '0')}</Text>
                 <View style={styles.slotContent}>
                   <Text style={styles.slotPosition}>{item}</Text>
                   {draftedPlayer ? <Text style={styles.rosterPlayer}>{draftedPlayer.name} <Text style={styles.teamText}>{draftedPlayer.team}</Text></Text> : <Text style={styles.emptySlot}>Open roster spot</Text>}
@@ -449,6 +449,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
 
+function teamFromPayload(payload: Record<string, unknown>) {
+  const team = payload.player_team_id ?? payload.player_team ?? payload.team_abbr ?? payload.team;
+  return typeof team === 'string' && team.trim().length > 0 ? team : 'FA';
+}
+
 function normalizePosition(value: string): Exclude<Position, 'All'> {
   const position = value.toUpperCase();
   return ['QB', 'RB', 'WR', 'TE', 'K', 'DST'].includes(position)
@@ -457,6 +462,7 @@ function normalizePosition(value: string): Exclude<Position, 'All'> {
 }
 
 function rosterSlotAcceptsPlayer(slot: string, position: Exclude<Position, 'All'>) {
+  if (slot === 'BN') return true;
   if (slot === 'WRT') return ['RB', 'WR', 'TE'].includes(position);
   if (slot === 'DEF') return position === 'DST';
   return slot === position;
