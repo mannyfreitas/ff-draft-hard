@@ -48,7 +48,12 @@ Deno.serve(async (request) => {
         position,
         player_name: String(ranking.player_name ?? ranking.name ?? "").trim(),
         rank_ecr: integerOrNull(ranking.rank_ecr ?? ranking.ecr),
-        rank_adp: numberOrNull(ranking.rank_adp ?? ranking.adp),
+        rank_adp: numberOrNull(
+          ranking.rank_adp
+            ?? ranking.adp
+            ?? ranking.average_draft_position
+            ?? ranking.avg_draft_position
+        ),
         payload: ranking,
         fetched_at: new Date().toISOString(),
       }))

@@ -94,7 +94,7 @@ export default function App() {
             team: teamFromPayload(payload),
             position: playerPosition,
             rank: ranking.rank_ecr ?? 0,
-            adp: ranking.rank_adp === null ? '—' : String(ranking.rank_adp),
+            adp: adpFromRanking(ranking.rank_adp, payload),
             bye: Number(payload.bye_week ?? payload.bye ?? 0),
             accent: accentForPosition(playerPosition),
           };
@@ -290,7 +290,7 @@ export default function App() {
                 <View style={[styles.playerRow, isUnavailable && styles.unavailablePlayerRow]}>
                   <View style={[styles.playerAvatar, { backgroundColor: item.accent }]}><Text style={styles.avatarText}>{item.name.split(' ').map((part) => part[0]).join('').slice(0, 2)}</Text></View>
                   <View style={styles.playerInfo}><Text style={[styles.playerName, isUnavailable && styles.unavailablePlayerName]}>{item.name}</Text><Text style={styles.playerMeta}>{item.position}  /  {item.team}  /  BYE {item.bye}</Text></View>
-                  <View style={styles.rankBlock}><Text style={styles.rankText}>#{item.rank}</Text><Text style={styles.adpText}>{item.adp} ADP</Text></View>
+                  <View style={styles.rankBlock}><Text style={styles.rankText}>#{item.rank}</Text><Text style={styles.adpText}>ECR</Text></View>
                   {isDrafted ? (
                     <Pressable disabled style={[styles.draftButton, styles.draftedButton]}><Text style={styles.draftedButtonText}>DRAFTED</Text></Pressable>
                   ) : isUnavailable ? (
@@ -468,6 +468,16 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function teamFromPayload(payload: Record<string, unknown>) {
   const team = payload.player_team_id ?? payload.player_team ?? payload.team_abbr ?? payload.team;
   return typeof team === 'string' && team.trim().length > 0 ? team : 'FA';
+}
+
+function adpFromRanking(rankAdp: number | null, payload: Record<string, unknown>) {
+  const adp = rankAdp
+    ?? payload.rank_adp
+    ?? payload.adp
+    ?? payload.average_draft_position
+    ?? payload.avg_draft_position;
+  const parsed = typeof adp === 'number' ? adp : typeof adp === 'string' ? Number(adp) : NaN;
+  return Number.isFinite(parsed) ? String(parsed) : '—';
 }
 
 function normalizePosition(value: string): Exclude<Position, 'All'> {
