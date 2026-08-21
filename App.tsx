@@ -39,7 +39,9 @@ export default function App() {
   const [activeView, setActiveView] = useState<'board' | 'players'>('board');
   const [position, setPosition] = useState<Position>('All');
   const [query, setQuery] = useState('');
+  const [availableOnly, setAvailableOnly] = useState(false);
   const [draftedIds, setDraftedIds] = useState<Array<string | null>>(() => Array(rosterSlots.length).fill(null));
+  const [unavailableIds, setUnavailableIds] = useState<string[]>([]);
   const [players, setPlayers] = useState<Player[]>([]);
   const [playersLoading, setPlayersLoading] = useState(true);
   const [playersLoaded, setPlayersLoaded] = useState(false);
@@ -135,9 +137,10 @@ export default function App() {
     () => players.filter((player) => {
       const matchesPosition = position === 'All' || player.position === position;
       const matchesQuery = player.name.toLowerCase().includes(query.toLowerCase());
-      return matchesPosition && matchesQuery;
+      const matchesAvailability = !availableOnly || !unavailableIds.includes(player.id);
+      return matchesPosition && matchesQuery && matchesAvailability;
     }),
-    [players, position, query],
+    [availableOnly, players, position, query, unavailableIds],
   );
 
   const draftPlayer = (playerId: string) => {
@@ -159,6 +162,14 @@ export default function App() {
       next[rosterIndex] = null;
       return next;
     });
+  };
+
+  const markUnavailable = (playerId: string) => {
+    setUnavailableIds((current) => current.includes(playerId) ? current : [...current, playerId]);
+  };
+
+  const markAvailable = (playerId: string) => {
+    setUnavailableIds((current) => current.filter((id) => id !== playerId));
   };
 
   return (
@@ -242,20 +253,33 @@ export default function App() {
               </Pressable>
             ))}
           </View>
+          <Pressable onPress={() => setAvailableOnly((current) => !current)} style={[styles.availabilityToggle, availableOnly && styles.activeAvailabilityToggle]}>
+            <Text style={[styles.availabilityToggleText, availableOnly && styles.activeAvailabilityToggleText]}>AVAILABLE ONLY</Text>
+          </Pressable>
           <FlatList
             data={availablePlayers}
             keyExtractor={(item) => item.id}
-            extraData={[playersLoaded, playersLoading, playersError, position, query]}
+            extraData={[playersLoaded, playersLoading, playersError, position, query, availableOnly, unavailableIds, draftedIds]}
             contentContainerStyle={styles.playerList}
             ListEmptyComponent={<View style={styles.playerState}><Text style={styles.playerStateText}>{!playersLoaded || playersLoading ? 'Loading rankings...' : playersError || 'No synced rankings found.'}</Text></View>}
             renderItem={({ item }) => {
               const isDrafted = draftedIds.includes(item.id);
+              const isUnavailable = unavailableIds.includes(item.id);
               return (
-                <View style={styles.playerRow}>
+                <View style={[styles.playerRow, isUnavailable && styles.unavailablePlayerRow]}>
                   <View style={[styles.playerAvatar, { backgroundColor: item.accent }]}><Text style={styles.avatarText}>{item.name.split(' ').map((part) => part[0]).join('').slice(0, 2)}</Text></View>
-                  <View style={styles.playerInfo}><Text style={styles.playerName}>{item.name}</Text><Text style={styles.playerMeta}>{item.position}  /  {item.team}  /  BYE {item.bye}</Text></View>
+                  <View style={styles.playerInfo}><Text style={[styles.playerName, isUnavailable && styles.unavailablePlayerName]}>{item.name}</Text><Text style={styles.playerMeta}>{item.position}  /  {item.team}  /  BYE {item.bye}</Text></View>
                   <View style={styles.rankBlock}><Text style={styles.rankText}>#{item.rank}</Text><Text style={styles.adpText}>{item.adp} ADP</Text></View>
-                  <Pressable disabled={isDrafted || !draftedIds.includes(null)} onPress={() => draftPlayer(item.id)} style={[styles.draftButton, isDrafted && styles.draftedButton]}><Text style={[styles.draftButtonText, isDrafted && styles.draftedButtonText]}>{isDrafted ? 'DRAFTED' : 'DRAFT'}</Text></Pressable>
+                  {isDrafted ? (
+                    <Pressable disabled style={[styles.draftButton, styles.draftedButton]}><Text style={styles.draftedButtonText}>DRAFTED</Text></Pressable>
+                  ) : isUnavailable ? (
+                    <Pressable onPress={() => markAvailable(item.id)} style={styles.unavailableButton}><Text style={styles.unavailableButtonText}>UNMARK</Text></Pressable>
+                  ) : (
+                    <View style={styles.playerActions}>
+                      <Pressable disabled={!draftedIds.includes(null)} onPress={() => draftPlayer(item.id)} style={[styles.draftButton, !draftedIds.includes(null) && styles.disabledDraftButton]}><Text style={styles.draftButtonText}>DRAFT</Text></Pressable>
+                      <Pressable onPress={() => markUnavailable(item.id)} style={styles.markUnavailableButton}><Text style={styles.markUnavailableButtonText}>TAKEN</Text></Pressable>
+                    </View>
+                  )}
                 </View>
               );
             }}
@@ -384,22 +408,34 @@ const styles = StyleSheet.create({
   activeFilter: { backgroundColor: '#24463d', borderColor: '#24463d' },
   filterText: { color: '#777b73', fontSize: 11, fontWeight: '800' },
   activeFilterText: { color: '#f4f1e9' },
+  availabilityToggle: { alignSelf: 'flex-start', borderWidth: 1, borderColor: '#d4d3c9', borderRadius: 3, marginBottom: 10, paddingHorizontal: 9, paddingVertical: 7 },
+  activeAvailabilityToggle: { backgroundColor: '#24463d', borderColor: '#24463d' },
+  availabilityToggleText: { color: '#777b73', fontSize: 9, fontWeight: '800', letterSpacing: 0.5 },
+  activeAvailabilityToggleText: { color: '#f4f1e9' },
   playerList: { paddingBottom: 30 },
   playerState: { paddingVertical: 40, alignItems: 'center' },
   playerStateText: { color: '#777b73', fontSize: 14, textAlign: 'center' },
   playerRow: { minHeight: 73, borderTopWidth: 1, borderTopColor: '#deddd4', flexDirection: 'row', alignItems: 'center', gap: 10 },
+  unavailablePlayerRow: { opacity: 0.62 },
   playerAvatar: { width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center' },
   avatarText: { color: '#fff', fontSize: 11, fontWeight: '800' },
   playerInfo: { flex: 1 },
   playerName: { color: '#1f2a25', fontSize: 14, fontWeight: '700' },
+  unavailablePlayerName: { textDecorationLine: 'line-through' },
   playerMeta: { color: '#8b8e85', fontSize: 10, marginTop: 4, fontWeight: '700' },
   rankBlock: { alignItems: 'flex-end', marginRight: 2 },
   rankText: { color: '#1f2a25', fontFamily: 'Georgia', fontSize: 15 },
   adpText: { color: '#a0a097', fontSize: 9, marginTop: 3 },
   draftButton: { backgroundColor: '#d96b45', borderRadius: 3, paddingHorizontal: 9, paddingVertical: 9 },
+  disabledDraftButton: { opacity: 0.45 },
   draftedButton: { backgroundColor: '#d9d9cf' },
   draftButtonText: { color: '#fff', fontSize: 9, fontWeight: '900', letterSpacing: 0.5 },
   draftedButtonText: { color: '#777b73' },
+  playerActions: { alignItems: 'flex-end', gap: 4 },
+  markUnavailableButton: { borderWidth: 1, borderColor: '#d4d3c9', borderRadius: 3, paddingHorizontal: 7, paddingVertical: 5 },
+  markUnavailableButtonText: { color: '#b54e37', fontSize: 8, fontWeight: '800', letterSpacing: 0.4 },
+  unavailableButton: { borderWidth: 1, borderColor: '#d4d3c9', borderRadius: 3, paddingHorizontal: 8, paddingVertical: 7 },
+  unavailableButtonText: { color: '#777b73', fontSize: 8, fontWeight: '800', letterSpacing: 0.4 },
 });
 
 function isRecord(value: unknown): value is Record<string, unknown> {
