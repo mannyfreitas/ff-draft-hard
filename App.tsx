@@ -156,7 +156,7 @@ export default function App() {
     if (session) {
       setActiveView(draftedIds.some(Boolean) ? 'board' : 'players');
     }
-  }, [session]);
+  }, [draftedIds, session]);
 
   const handleAuth = async () => {
     if (!supabase) return;
