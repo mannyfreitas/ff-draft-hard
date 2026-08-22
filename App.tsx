@@ -19,9 +19,10 @@ type Player = {
   name: string;
   team: string;
   position: Exclude<Position, 'All'>;
+  posRank: string;
   rank: number;
   adp: string;
-  bye: number;
+  bye: number | null;
   accent: string;
 };
 
@@ -93,9 +94,10 @@ export default function App() {
             name: ranking.player_name,
             team: teamFromPayload(payload),
             position: playerPosition,
+            posRank: positionRankFromPayload(payload, playerPosition),
             rank: ranking.rank_ecr ?? 0,
             adp: adpFromRanking(ranking.rank_adp, payload),
-            bye: Number(payload.bye_week ?? payload.bye ?? 0),
+            bye: byeWeekFromPayload(payload),
             accent: accentForPosition(playerPosition),
           };
         }));
@@ -241,14 +243,14 @@ export default function App() {
               <View style={styles.rosterRow}>
                 {draftedPlayer ? (
                   <View style={[styles.rosterAvatar, { backgroundColor: draftedPlayer.accent }]}>
-                    <Text style={styles.avatarText}>{draftedPlayer.name.split(' ').map((part) => part[0]).join('').slice(0, 2)}</Text>
+                    <Text style={styles.avatarText}>{draftedPlayer.position}</Text>
                   </View>
                 ) : <View style={styles.rosterAvatarPlaceholder} />}
                 <View style={styles.slotContent}>
                   {draftedPlayer ? (
                     <>
                       <Text style={styles.rosterPlayer}>{draftedPlayer.name}</Text>
-                      <Text style={styles.rosterMeta}>{draftedPlayer.position}  /  {draftedPlayer.team}  /  BYE {draftedPlayer.bye}</Text>
+                      <Text style={styles.rosterMeta}>{draftedPlayer.posRank}  /  {draftedPlayer.team}  /  BYE {draftedPlayer.bye ?? '—'}</Text>
                     </>
                   ) : (
                     <>
@@ -295,10 +297,13 @@ export default function App() {
               const hasOpenRosterSlot = draftedIds.some((draftedId, index) => (
                 draftedId === null && rosterSlotAcceptsPlayer(rosterSlots[index], item.position)
               ));
+              const hasByeConflict = item.bye !== null && players.some((player) => (
+                player.id !== item.id && draftedIds.includes(player.id) && player.bye === item.bye
+              ));
               return (
                 <View style={[styles.playerRow, isUnavailable && styles.unavailablePlayerRow]}>
-                  <View style={[styles.playerAvatar, { backgroundColor: item.accent }]}><Text style={styles.avatarText}>{item.name.split(' ').map((part) => part[0]).join('').slice(0, 2)}</Text></View>
-                  <View style={styles.playerInfo}><Text style={[styles.playerName, isUnavailable && styles.unavailablePlayerName]}>{item.name}</Text><Text style={styles.playerMeta}>{item.position}  /  {item.team}  /  BYE {item.bye}</Text></View>
+                  <View style={[styles.playerAvatar, { backgroundColor: item.accent }]}><Text style={styles.avatarText}>{item.position}</Text></View>
+                  <View style={styles.playerInfo}><Text style={[styles.playerName, isUnavailable && styles.unavailablePlayerName]}>{item.name}</Text><Text style={styles.playerMeta}>{item.posRank}  /  {item.team}  /  <Text style={hasByeConflict && styles.byeConflictHighlight}>BYE {item.bye ?? '—'}</Text></Text></View>
                   <View style={styles.rankBlock}><Text style={styles.rankText}>#{item.rank}</Text><Text style={styles.adpText}>ECR</Text></View>
                   {isDrafted ? (
                     <Pressable disabled style={[styles.draftButton, styles.draftedButton]}><Text style={styles.draftedButtonText}>DRAFTED</Text></Pressable>
@@ -458,6 +463,7 @@ const styles = StyleSheet.create({
   playerName: { color: '#1f2a25', fontSize: 14, fontWeight: '700' },
   unavailablePlayerName: { textDecorationLine: 'line-through' },
   playerMeta: { color: '#8b8e85', fontSize: 10, marginTop: 4, fontWeight: '700' },
+  byeConflictHighlight: { color: '#9d3f2b', backgroundColor: '#f4d8ce', fontWeight: '900' },
   rankBlock: { alignItems: 'flex-end', marginRight: 2 },
   rankText: { color: '#1f2a25', fontFamily: 'Georgia', fontSize: 15 },
   adpText: { color: '#a0a097', fontSize: 9, marginTop: 3 },
@@ -480,6 +486,21 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function teamFromPayload(payload: Record<string, unknown>) {
   const team = payload.player_team_id ?? payload.player_team ?? payload.team_abbr ?? payload.team;
   return typeof team === 'string' && team.trim().length > 0 ? team : 'FA';
+}
+
+function positionRankFromPayload(payload: Record<string, unknown>, position: string) {
+  const posRank = payload.pos_rank;
+  return posRank === null || posRank === undefined || posRank === '' ? position : String(posRank);
+}
+
+function byeWeekFromPayload(payload: Record<string, unknown>): number | null {
+  const sources = [payload, payload.player, payload.player_info].filter(isRecord);
+  for (const source of sources) {
+    const value = source.player_bye_week ?? source.playerByeWeek ?? source.bye_week ?? source.byeWeek ?? source.bye_week_number ?? source.byeWeekNumber ?? source.bye;
+    const parsed = typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : NaN;
+    if (Number.isInteger(parsed) && parsed > 0) return parsed;
+  }
+  return null;
 }
 
 function adpFromRanking(rankAdp: number | null, payload: Record<string, unknown>) {
