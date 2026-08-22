@@ -364,7 +364,7 @@ function AuthScreen({ authBusy, authError, authMessage, authMode, email, passwor
 
   return (
     <View style={styles.authContainer}>
-      <Text style={styles.eyebrow}>SUNDAY LEAGUE  /  2025</Text>
+      <Text style={styles.eyebrow}>DRAFT HARD</Text>
       <Text style={styles.authTitle}>Draft together.</Text>
       <Text style={styles.authIntro}>Sign in to keep your leagues and picks ready wherever draft day takes you.</Text>
       <View style={styles.authForm}>
@@ -388,7 +388,7 @@ function AuthScreen({ authBusy, authError, authMessage, authMode, email, passwor
 function AuthSetup() {
   return (
     <View style={styles.authContainer}>
-      <Text style={styles.eyebrow}>SUNDAY LEAGUE  /  2025</Text>
+      <Text style={styles.eyebrow}>DRAFT HARD</Text>
       <Text style={styles.authTitle}>Almost ready.</Text>
       <Text style={styles.authIntro}>Add your Supabase project values to the app environment to enable league accounts.</Text>
       <View style={styles.setupNote}><Text style={styles.setupNoteTitle}>BACKEND SETUP NEEDED</Text><Text style={styles.setupNoteBody}>Copy .env.example to .env and add EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY.</Text></View>
