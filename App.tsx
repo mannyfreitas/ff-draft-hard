@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import type { Session } from '@supabase/supabase-js';
 import {
+  ActivityIndicator,
   FlatList,
   Linking,
   Pressable,
@@ -131,6 +132,7 @@ export default function App() {
     }
 
     const client = supabase;
+    setDraftStateLoaded(false);
     setDraftStateError('');
     client.from('draft_states').select('drafted_ids, unavailable_ids').eq('user_id', session.user.id).maybeSingle().then(({ data, error }) => {
       if (error) {
@@ -308,6 +310,12 @@ export default function App() {
         <Text numberOfLines={1} ellipsizeMode="middle" style={styles.accountText}>{session.user.email ?? 'Account'}</Text>
         <Pressable onPress={handleSignOut} style={styles.signOutButton}><Text style={styles.signOutText}>SIGN OUT</Text></Pressable>
       </View>
+      {playersLoading || !draftStateLoaded ? (
+        <View style={styles.dataLoading}>
+          <ActivityIndicator color="#d96b45" size="small" />
+          <Text style={styles.dataLoadingText}>{draftStateError || playersError || 'Loading your draft...'}</Text>
+        </View>
+      ) : <>
       {draftStateError ? <Text style={styles.draftStateError}>{draftStateError}</Text> : null}
       <View style={styles.header}>
         <View style={styles.headerCopy}>
@@ -431,6 +439,7 @@ export default function App() {
           />
         </View>
         )}
+      </>}
           </>
         )}
       </SafeAreaView>
@@ -502,6 +511,8 @@ const styles = StyleSheet.create({
   },
   authLoading: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   authLoadingText: { color: '#777b73', fontSize: 14 },
+  dataLoading: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, paddingHorizontal: 24 },
+  dataLoadingText: { color: '#777b73', fontSize: 14, textAlign: 'center' },
   authContainer: { flex: 1, paddingHorizontal: 24, paddingTop: 76 },
   authTitle: { color: '#1f2a25', fontFamily: 'Georgia', fontSize: 42, lineHeight: 48, marginTop: 10 },
   authIntro: { color: '#777b73', fontSize: 16, lineHeight: 23, marginTop: 14, maxWidth: 340 },
