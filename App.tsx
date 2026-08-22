@@ -32,8 +32,9 @@ const rosterSlots = ['QB', 'RB', 'RB', 'WR', 'WR', 'TE', 'WRT', 'K', 'DEF', 'BN'
 
 export default function App() {
   const [session, setSession] = useState<Session | null>(null);
+  const [passwordRecovery, setPasswordRecovery] = useState(false);
   const [authLoading, setAuthLoading] = useState(true);
-  const [authMode, setAuthMode] = useState<'signIn' | 'signUp'>('signIn');
+  const [authMode, setAuthMode] = useState<'signIn' | 'signUp' | 'forgotPassword' | 'updatePassword'>('signIn');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [authError, setAuthError] = useState('');
@@ -61,8 +62,9 @@ export default function App() {
       setAuthLoading(false);
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, currentSession) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, currentSession) => {
       setSession(currentSession);
+      if (event === 'PASSWORD_RECOVERY') setPasswordRecovery(true);
     });
 
     return () => subscription.unsubscribe();
@@ -125,6 +127,29 @@ export default function App() {
     setAuthBusy(true);
     setAuthError('');
     setAuthMessage('');
+
+    if (authMode === 'forgotPassword') {
+      const result = await supabase.auth.resetPasswordForEmail(email.trim(), {
+        redirectTo: typeof window !== 'undefined' ? window.location.origin : undefined,
+      });
+      if (result.error) setAuthError(result.error.message);
+      else setAuthMessage('Check your email for a password reset link.');
+      setAuthBusy(false);
+      return;
+    }
+
+    if (authMode === 'updatePassword') {
+      const result = await supabase.auth.updateUser({ password });
+      if (result.error) setAuthError(result.error.message);
+      else {
+        setAuthMessage('Your password has been updated.');
+        setPasswordRecovery(false);
+        setAuthMode('signIn');
+        setPassword('');
+      }
+      setAuthBusy(false);
+      return;
+    }
 
     const result = authMode === 'signIn'
       ? await supabase.auth.signInWithPassword({ email: email.trim(), password })
@@ -201,6 +226,20 @@ export default function App() {
           <View style={styles.authLoading}><Text style={styles.authLoadingText}>Loading your league...</Text></View>
         ) : !supabase ? (
           <AuthSetup />
+        ) : passwordRecovery ? (
+          <AuthScreen
+            authBusy={authBusy}
+            authError={authError}
+            authMessage={authMessage}
+            authMode="updatePassword"
+            email={email}
+            password={password}
+            onAuth={handleAuth}
+            onEmailChange={setEmail}
+            onForgotPassword={() => { setAuthMode('forgotPassword'); setAuthError(''); setAuthMessage(''); }}
+            onModeChange={(mode) => { setAuthMode(mode); setAuthError(''); setAuthMessage(''); }}
+            onPasswordChange={setPassword}
+          />
         ) : !session ? (
           <AuthScreen
             authBusy={authBusy}
@@ -211,17 +250,21 @@ export default function App() {
             password={password}
             onAuth={handleAuth}
             onEmailChange={setEmail}
+            onForgotPassword={() => { setAuthMode('forgotPassword'); setAuthError(''); setAuthMessage(''); }}
             onModeChange={(mode) => { setAuthMode(mode); setAuthError(''); setAuthMessage(''); }}
             onPasswordChange={setPassword}
           />
         ) : (
           <>
+      <View style={styles.accountBar}>
+        <Text numberOfLines={1} ellipsizeMode="middle" style={styles.accountText}>{session.user.email ?? 'Account'}</Text>
+        <Pressable onPress={handleSignOut} style={styles.signOutButton}><Text style={styles.signOutText}>SIGN OUT</Text></Pressable>
+      </View>
       <View style={styles.header}>
         <View style={styles.headerCopy}>
           <Text style={styles.title}>Draft Hard</Text>
           <Text style={[styles.eyebrow, styles.headerSubtitle]}>Guess Confidently.{"\n"}Blame the Experts.</Text>
         </View>
-        <Pressable onPress={handleSignOut} style={styles.signOutButton}><Text style={styles.signOutText}>SIGN OUT</Text></Pressable>
       </View>
 
       <View style={styles.progressTrack}>
@@ -350,37 +393,44 @@ type AuthScreenProps = {
   authBusy: boolean;
   authError: string;
   authMessage: string;
-  authMode: 'signIn' | 'signUp';
+  authMode: 'signIn' | 'signUp' | 'forgotPassword' | 'updatePassword';
   email: string;
   password: string;
   onAuth: () => void;
   onEmailChange: (value: string) => void;
-  onModeChange: (mode: 'signIn' | 'signUp') => void;
+  onForgotPassword: () => void;
+  onModeChange: (mode: 'signIn' | 'signUp' | 'forgotPassword' | 'updatePassword') => void;
   onPasswordChange: (value: string) => void;
 };
 
-function AuthScreen({ authBusy, authError, authMessage, authMode, email, password, onAuth, onEmailChange, onModeChange, onPasswordChange }: AuthScreenProps) {
+function AuthScreen({ authBusy, authError, authMessage, authMode, email, password, onAuth, onEmailChange, onForgotPassword, onModeChange, onPasswordChange }: AuthScreenProps) {
   const isSignIn = authMode === 'signIn';
+  const isForgotPassword = authMode === 'forgotPassword';
+  const isUpdatePassword = authMode === 'updatePassword';
+  const formIncomplete = isUpdatePassword ? !password : !email || (!isForgotPassword && !password);
 
   return (
     <View style={styles.authContainer}>
-      <Text style={styles.eyebrow}>DRAFT HARD</Text>
-      <Text style={styles.authTitle}>Draft together.</Text>
-      <Text style={styles.authIntro}>Sign in to keep your leagues and picks ready wherever draft day takes you.</Text>
+      <Text style={styles.authTitle}>{isUpdatePassword ? 'Choose a new password.' : isForgotPassword ? 'Reset your password.' : 'Draft Hard'}</Text>
+      <Text style={styles.authIntro}>{isUpdatePassword ? 'Set a new password for your Draft Hard account.' : isForgotPassword ? 'Enter your email and we will send you a password reset link.' : <>Guess Confidently.{'\n'}Blame the Experts.</>}</Text>
       <View style={styles.authForm}>
-        <Text style={styles.authLabel}>EMAIL</Text>
-        <TextInput autoCapitalize="none" autoCorrect={false} keyboardType="email-address" value={email} onChangeText={onEmailChange} placeholder="you@example.com" placeholderTextColor="#8e938c" style={styles.authInput} />
-        <Text style={styles.authLabel}>PASSWORD</Text>
-        <TextInput secureTextEntry value={password} onChangeText={onPasswordChange} placeholder="At least 6 characters" placeholderTextColor="#8e938c" style={styles.authInput} />
+        {!isUpdatePassword ? <>
+          <Text style={styles.authLabel}>EMAIL</Text>
+          <TextInput autoCapitalize="none" autoCorrect={false} keyboardType="email-address" value={email} onChangeText={onEmailChange} placeholder="you@example.com" placeholderTextColor="#8e938c" style={styles.authInput} />
+        </> : null}
+        {!isForgotPassword ? <>
+          <Text style={styles.authLabel}>PASSWORD</Text>
+          <TextInput secureTextEntry value={password} onChangeText={onPasswordChange} placeholder="At least 6 characters" placeholderTextColor="#8e938c" style={styles.authInput} />
+        </> : null}
         {authError ? <Text style={styles.authError}>{authError}</Text> : null}
         {authMessage ? <Text style={styles.authMessage}>{authMessage}</Text> : null}
-        <Pressable disabled={authBusy || !email || !password} onPress={onAuth} style={[styles.authButton, (authBusy || !email || !password) && styles.authButtonDisabled]}>
-          <Text style={styles.authButtonText}>{authBusy ? 'PLEASE WAIT' : isSignIn ? 'SIGN IN' : 'CREATE ACCOUNT'}</Text>
+        <Pressable disabled={authBusy || formIncomplete} onPress={onAuth} style={[styles.authButton, (authBusy || formIncomplete) && styles.authButtonDisabled]}>
+          <Text style={styles.authButtonText}>{authBusy ? 'PLEASE WAIT' : isUpdatePassword ? 'UPDATE PASSWORD' : isForgotPassword ? 'SEND RESET LINK' : isSignIn ? 'SIGN IN' : 'CREATE ACCOUNT'}</Text>
         </Pressable>
       </View>
-      <Pressable onPress={() => onModeChange(isSignIn ? 'signUp' : 'signIn')}>
-        <Text style={styles.authSwitch}>{isSignIn ? 'New to Sunday League? Create an account' : 'Already have an account? Sign in'}</Text>
-      </Pressable>
+      {isSignIn ? <Pressable onPress={onForgotPassword}><Text style={styles.authSwitch}>Forgot your password?</Text></Pressable> : null}
+      {!isUpdatePassword ? <Pressable onPress={() => onModeChange(isSignIn || isForgotPassword ? 'signUp' : 'signIn')}><Text style={styles.authSwitch}>{isSignIn || isForgotPassword ? 'New to Draft Hard? Create an account' : 'Already have an account? Sign in'}</Text></Pressable> : null}
+      {isForgotPassword ? <Pressable onPress={() => onModeChange('signIn')}><Text style={styles.authSwitch}>Back to sign in</Text></Pressable> : null}
     </View>
   );
 }
@@ -418,13 +468,15 @@ const styles = StyleSheet.create({
   setupNote: { borderLeftWidth: 3, borderLeftColor: '#d96b45', marginTop: 38, paddingLeft: 14, paddingVertical: 2 },
   setupNoteTitle: { color: '#1f2a25', fontSize: 11, fontWeight: '800', letterSpacing: 0.7 },
   setupNoteBody: { color: '#777b73', fontSize: 14, lineHeight: 20, marginTop: 6, maxWidth: 330 },
-  header: { paddingHorizontal: 24, paddingTop: 22, paddingBottom: 18, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
+  accountBar: { paddingHorizontal: 24, paddingTop: 10, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12 },
+  accountText: { color: '#777b73', flex: 1, fontSize: 10, fontWeight: '700', letterSpacing: 0.4 },
+  header: { paddingHorizontal: 24, paddingTop: 6, paddingBottom: 18, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
   headerCopy: { flex: 1, minWidth: 0, paddingRight: 12 },
   signOutButton: { flexShrink: 0, borderWidth: 1, borderColor: '#d4d3c9', borderRadius: 3, paddingHorizontal: 8, paddingVertical: 7 },
   signOutText: { color: '#777b73', fontSize: 8, fontWeight: '800', letterSpacing: 0.6 },
   eyebrow: { color: '#777b73', fontSize: 11, fontWeight: '700', letterSpacing: 1.5 },
   headerSubtitle: { fontSize: 12, lineHeight: 17 },
-  title: { color: '#1f2a25', fontSize: 42, lineHeight: 48, marginTop: 7 },
+  title: { color: '#1f2a25', fontSize: 38, fontWeight: '800', lineHeight: 44, marginTop: 7 },
   roundBadge: { backgroundColor: '#24463d', width: 58, height: 58, borderRadius: 29, alignItems: 'center', justifyContent: 'center' },
   roundNumber: { color: '#f4f1e9', fontFamily: 'Georgia', fontSize: 21 },
   roundLabel: { color: '#bfd4c4', fontSize: 8, fontWeight: '700', letterSpacing: 1 },
