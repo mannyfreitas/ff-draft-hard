@@ -219,7 +219,7 @@ export default function App() {
       <View style={styles.header}>
         <View style={styles.headerCopy}>
           <Text style={styles.title}>Draft Hard</Text>
-          <Text style={styles.eyebrow}>Guess Confidently. Blame the Experts.</Text>
+          <Text style={[styles.eyebrow, styles.headerSubtitle]}>Guess Confidently.{"\n"}Blame the Experts.</Text>
         </View>
         <Pressable onPress={handleSignOut} style={styles.signOutButton}><Text style={styles.signOutText}>SIGN OUT</Text></Pressable>
       </View>
@@ -423,7 +423,8 @@ const styles = StyleSheet.create({
   signOutButton: { flexShrink: 0, borderWidth: 1, borderColor: '#d4d3c9', borderRadius: 3, paddingHorizontal: 8, paddingVertical: 7 },
   signOutText: { color: '#777b73', fontSize: 8, fontWeight: '800', letterSpacing: 0.6 },
   eyebrow: { color: '#777b73', fontSize: 11, fontWeight: '700', letterSpacing: 1.5 },
-  title: { color: '#1f2a25', fontFamily: 'Georgia', fontSize: 42, lineHeight: 48, marginTop: 7 },
+  headerSubtitle: { fontSize: 12, lineHeight: 17 },
+  title: { color: '#1f2a25', fontSize: 42, lineHeight: 48, marginTop: 7 },
   roundBadge: { backgroundColor: '#24463d', width: 58, height: 58, borderRadius: 29, alignItems: 'center', justifyContent: 'center' },
   roundNumber: { color: '#f4f1e9', fontFamily: 'Georgia', fontSize: 21 },
   roundLabel: { color: '#bfd4c4', fontSize: 8, fontWeight: '700', letterSpacing: 1 },
