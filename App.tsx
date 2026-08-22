@@ -1,4 +1,5 @@
 import { StatusBar } from 'expo-status-bar';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useEffect, useMemo, useState } from 'react';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import type { Session } from '@supabase/supabase-js';
@@ -46,6 +47,7 @@ export default function App() {
   const [availableOnly, setAvailableOnly] = useState(false);
   const [draftedIds, setDraftedIds] = useState<Array<string | null>>(() => Array(rosterSlots.length).fill(null));
   const [unavailableIds, setUnavailableIds] = useState<string[]>([]);
+  const [draftStateLoaded, setDraftStateLoaded] = useState(false);
   const [players, setPlayers] = useState<Player[]>([]);
   const [playersLoading, setPlayersLoading] = useState(true);
   const [playersLoaded, setPlayersLoaded] = useState(false);
@@ -114,6 +116,41 @@ export default function App() {
 
     loadPlayers();
   }, [session]);
+
+  useEffect(() => {
+    if (!session) {
+      setDraftStateLoaded(false);
+      setDraftedIds(Array(rosterSlots.length).fill(null));
+      setUnavailableIds([]);
+      return;
+    }
+
+    const storageKey = `draft-hard-state:${session.user.id}`;
+    AsyncStorage.getItem(storageKey).then((storedState) => {
+      if (storedState) {
+        try {
+          const parsedState = JSON.parse(storedState) as {
+            draftedIds?: unknown;
+            unavailableIds?: unknown;
+          };
+          if (Array.isArray(parsedState.draftedIds) && parsedState.draftedIds.length === rosterSlots.length) {
+            setDraftedIds(parsedState.draftedIds.map((id) => typeof id === 'string' ? id : null));
+          }
+          if (Array.isArray(parsedState.unavailableIds)) {
+            setUnavailableIds(parsedState.unavailableIds.filter((id): id is string => typeof id === 'string'));
+          }
+        } catch {
+          // Ignore invalid local state and start with an empty draft.
+        }
+      }
+      setDraftStateLoaded(true);
+    });
+  }, [session]);
+
+  useEffect(() => {
+    if (!session || !draftStateLoaded) return;
+    AsyncStorage.setItem(`draft-hard-state:${session.user.id}`, JSON.stringify({ draftedIds, unavailableIds }));
+  }, [draftStateLoaded, draftedIds, session, unavailableIds]);
 
   useEffect(() => {
     if (session) {
