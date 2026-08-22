@@ -217,7 +217,7 @@ export default function App() {
         ) : (
           <>
       <View style={styles.header}>
-        <View>
+        <View style={styles.headerCopy}>
           <Text style={styles.title}>Draft Hard</Text>
           <Text style={styles.eyebrow}>Guess Confidently. Blame the Experts.</Text>
         </View>
@@ -419,7 +419,8 @@ const styles = StyleSheet.create({
   setupNoteTitle: { color: '#1f2a25', fontSize: 11, fontWeight: '800', letterSpacing: 0.7 },
   setupNoteBody: { color: '#777b73', fontSize: 14, lineHeight: 20, marginTop: 6, maxWidth: 330 },
   header: { paddingHorizontal: 24, paddingTop: 22, paddingBottom: 18, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
-  signOutButton: { borderWidth: 1, borderColor: '#d4d3c9', borderRadius: 3, paddingHorizontal: 8, paddingVertical: 7 },
+  headerCopy: { flex: 1, minWidth: 0, paddingRight: 12 },
+  signOutButton: { flexShrink: 0, borderWidth: 1, borderColor: '#d4d3c9', borderRadius: 3, paddingHorizontal: 8, paddingVertical: 7 },
   signOutText: { color: '#777b73', fontSize: 8, fontWeight: '800', letterSpacing: 0.6 },
   eyebrow: { color: '#777b73', fontSize: 11, fontWeight: '700', letterSpacing: 1.5 },
   title: { color: '#1f2a25', fontFamily: 'Georgia', fontSize: 42, lineHeight: 48, marginTop: 7 },
