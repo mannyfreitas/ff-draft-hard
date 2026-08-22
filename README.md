@@ -1,4 +1,5 @@
-# Sunday League
+# Draft Hard
+## Guess Confidently. Blame the Experts.
 
 An Expo React Native fantasy football draft board with a Supabase-ready data layer.
 

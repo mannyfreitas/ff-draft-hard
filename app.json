@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "fantasy-draft-app",
-    "slug": "fantasy-draft-app",
+    "name": "ff-draft-hard",
+    "slug": "ff-draft-hard",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
