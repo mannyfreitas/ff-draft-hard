@@ -4,6 +4,7 @@ import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import type { Session } from '@supabase/supabase-js';
 import {
   FlatList,
+  Linking,
   Pressable,
   StyleSheet,
   Text,
@@ -20,6 +21,7 @@ type Player = {
   team: string;
   position: Exclude<Position, 'All'>;
   posRank: string;
+  playerPageUrl: string | null;
   rank: number;
   adp: string;
   bye: number | null;
@@ -95,6 +97,7 @@ export default function App() {
             team: teamFromPayload(payload),
             position: playerPosition,
             posRank: positionRankFromPayload(payload, playerPosition),
+            playerPageUrl: playerPageUrlFromPayload(payload),
             rank: ranking.rank_ecr ?? 0,
             adp: adpFromRanking(ranking.rank_adp, payload),
             bye: byeWeekFromPayload(payload),
@@ -186,6 +189,10 @@ export default function App() {
     setUnavailableIds((current) => current.filter((id) => id !== playerId));
   };
 
+  const openPlayerPage = (url: string) => {
+    Linking.openURL(url);
+  };
+
   return (
     <SafeAreaProvider>
       <SafeAreaView edges={['top']} style={styles.safeArea}>
@@ -249,7 +256,11 @@ export default function App() {
                 <View style={styles.slotContent}>
                   {draftedPlayer ? (
                     <>
-                      <Text style={styles.rosterPlayer}>{draftedPlayer.name}</Text>
+                      {draftedPlayer.playerPageUrl ? (
+                        <Pressable accessibilityLabel={`Open ${draftedPlayer.name} profile`} onPress={() => openPlayerPage(draftedPlayer.playerPageUrl!)}>
+                          <Text style={[styles.rosterPlayer, styles.linkedPlayerName]}>{draftedPlayer.name}</Text>
+                        </Pressable>
+                      ) : <Text style={styles.rosterPlayer}>{draftedPlayer.name}</Text>}
                       <Text style={styles.rosterMeta}>{draftedPlayer.posRank}  /  {draftedPlayer.team}  /  BYE {draftedPlayer.bye ?? '—'}</Text>
                     </>
                   ) : (
@@ -303,7 +314,14 @@ export default function App() {
               return (
                 <View style={[styles.playerRow, isUnavailable && styles.unavailablePlayerRow]}>
                   <View style={[styles.playerAvatar, { backgroundColor: item.accent }]}><Text style={styles.avatarText}>{item.position}</Text></View>
-                  <View style={styles.playerInfo}><Text style={[styles.playerName, isUnavailable && styles.unavailablePlayerName]}>{item.name}</Text><Text style={styles.playerMeta}>{item.posRank}  /  {item.team}  /  <Text style={hasByeConflict && styles.byeConflictHighlight}>BYE {item.bye ?? '—'}</Text></Text></View>
+                  <View style={styles.playerInfo}>
+                    {item.playerPageUrl ? (
+                      <Pressable accessibilityLabel={`Open ${item.name} profile`} onPress={() => openPlayerPage(item.playerPageUrl!)}>
+                        <Text style={[styles.playerName, styles.linkedPlayerName, isUnavailable && styles.unavailablePlayerName]}>{item.name}</Text>
+                      </Pressable>
+                    ) : <Text style={[styles.playerName, isUnavailable && styles.unavailablePlayerName]}>{item.name}</Text>}
+                    <Text style={styles.playerMeta}>{item.posRank}  /  {item.team}  /  <Text style={hasByeConflict && styles.byeConflictHighlight}>BYE {item.bye ?? '—'}</Text></Text>
+                  </View>
                   <View style={styles.rankBlock}><Text style={styles.rankText}>#{item.rank}</Text><Text style={styles.adpText}>ECR</Text></View>
                   {isDrafted ? (
                     <Pressable disabled style={[styles.draftButton, styles.draftedButton]}><Text style={styles.draftedButtonText}>DRAFTED</Text></Pressable>
@@ -461,6 +479,7 @@ const styles = StyleSheet.create({
   avatarText: { color: '#fff', fontSize: 11, fontWeight: '800' },
   playerInfo: { flex: 1 },
   playerName: { color: '#1f2a25', fontSize: 14, fontWeight: '700' },
+  linkedPlayerName: { textDecorationLine: 'underline' },
   unavailablePlayerName: { textDecorationLine: 'line-through' },
   playerMeta: { color: '#8b8e85', fontSize: 10, marginTop: 4, fontWeight: '700' },
   byeConflictHighlight: { color: '#9d3f2b', backgroundColor: '#f4d8ce', fontWeight: '900' },
@@ -491,6 +510,15 @@ function teamFromPayload(payload: Record<string, unknown>) {
 function positionRankFromPayload(payload: Record<string, unknown>, position: string) {
   const posRank = payload.pos_rank;
   return posRank === null || posRank === undefined || posRank === '' ? position : String(posRank);
+}
+
+function playerPageUrlFromPayload(payload: Record<string, unknown>): string | null {
+  const sources = [payload, payload.player, payload.player_info].filter(isRecord);
+  for (const source of sources) {
+    const value = source.player_page_url ?? source.playerPageUrl ?? source.player_url ?? source.playerUrl;
+    if (typeof value === 'string' && /^https?:\/\//i.test(value)) return value;
+  }
+  return null;
 }
 
 function byeWeekFromPayload(payload: Record<string, unknown>): number | null {
