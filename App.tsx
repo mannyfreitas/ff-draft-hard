@@ -1,5 +1,4 @@
 import { StatusBar } from 'expo-status-bar';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useEffect, useMemo, useState } from 'react';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import type { Session } from '@supabase/supabase-js';
@@ -48,6 +47,7 @@ export default function App() {
   const [draftedIds, setDraftedIds] = useState<Array<string | null>>(() => Array(rosterSlots.length).fill(null));
   const [unavailableIds, setUnavailableIds] = useState<string[]>([]);
   const [draftStateLoaded, setDraftStateLoaded] = useState(false);
+  const [draftStateError, setDraftStateError] = useState('');
   const [players, setPlayers] = useState<Player[]>([]);
   const [playersLoading, setPlayersLoading] = useState(true);
   const [playersLoaded, setPlayersLoaded] = useState(false);
@@ -81,33 +81,37 @@ export default function App() {
       setPlayersError('');
       setPlayersLoaded(false);
 
-      const { data, error } = await client
-        .from('fantasypros_rankings')
-        .select('id, player_name, position, rank_ecr, rank_adp, payload')
-        .eq('season', 2026)
-        .eq('format', 'redraft')
-        .eq('scoring', 'HALF')
-        .order('rank_ecr', { ascending: true, nullsFirst: false });
+      try {
+        const { data, error } = await client
+          .from('fantasypros_rankings')
+          .select('id, player_name, position, rank_ecr, rank_adp, payload')
+          .eq('season', 2026)
+          .eq('format', 'redraft')
+          .eq('scoring', 'HALF')
+          .order('rank_ecr', { ascending: true, nullsFirst: false });
 
-      if (error) {
-        setPlayersError(error.message);
-      } else {
-        setPlayers(data.map((ranking) => {
-          const payload = isRecord(ranking.payload) ? ranking.payload : {};
-          const playerPosition = normalizePosition(ranking.position);
-          return {
-            id: String(ranking.id),
-            name: ranking.player_name,
-            team: teamFromPayload(payload),
-            position: playerPosition,
-            posRank: positionRankFromPayload(payload, playerPosition),
-            playerPageUrl: playerPageUrlFromPayload(payload),
-            rank: ranking.rank_ecr ?? 0,
-            adp: adpFromRanking(ranking.rank_adp, payload),
-            bye: byeWeekFromPayload(payload),
-            accent: accentForPosition(playerPosition),
-          };
-        }));
+        if (error) {
+          setPlayersError(error.message);
+        } else {
+          setPlayers(data.map((ranking) => {
+            const payload = isRecord(ranking.payload) ? ranking.payload : {};
+            const playerPosition = normalizePosition(ranking.position);
+            return {
+              id: String(ranking.id),
+              name: ranking.player_name,
+              team: teamFromPayload(payload),
+              position: playerPosition,
+              posRank: positionRankFromPayload(payload, playerPosition),
+              playerPageUrl: playerPageUrlFromPayload(payload),
+              rank: ranking.rank_ecr ?? 0,
+              adp: adpFromRanking(ranking.rank_adp, payload),
+              bye: byeWeekFromPayload(payload),
+              accent: accentForPosition(playerPosition),
+            };
+          }));
+        }
+      } catch (error) {
+        setPlayersError(error instanceof Error ? error.message : 'Unable to load rankings.');
       }
 
       setPlayersLoaded(true);
@@ -118,38 +122,45 @@ export default function App() {
   }, [session]);
 
   useEffect(() => {
-    if (!session) {
+    if (!supabase || !session) {
       setDraftStateLoaded(false);
+      setDraftStateError('');
       setDraftedIds(Array(rosterSlots.length).fill(null));
       setUnavailableIds([]);
       return;
     }
 
-    const storageKey = `draft-hard-state:${session.user.id}`;
-    AsyncStorage.getItem(storageKey).then((storedState) => {
-      if (storedState) {
-        try {
-          const parsedState = JSON.parse(storedState) as {
-            draftedIds?: unknown;
-            unavailableIds?: unknown;
-          };
-          if (Array.isArray(parsedState.draftedIds) && parsedState.draftedIds.length === rosterSlots.length) {
-            setDraftedIds(parsedState.draftedIds.map((id) => typeof id === 'string' ? id : null));
-          }
-          if (Array.isArray(parsedState.unavailableIds)) {
-            setUnavailableIds(parsedState.unavailableIds.filter((id): id is string => typeof id === 'string'));
-          }
-        } catch {
-          // Ignore invalid local state and start with an empty draft.
-        }
+    const client = supabase;
+    setDraftStateError('');
+    client.from('draft_states').select('drafted_ids, unavailable_ids').eq('user_id', session.user.id).maybeSingle().then(({ data, error }) => {
+      if (error) {
+        setDraftStateError(`Unable to load draft: ${error.message}`);
+        return;
+      }
+      if (data && Array.isArray(data.drafted_ids) && data.drafted_ids.length === rosterSlots.length) {
+        setDraftedIds(data.drafted_ids.map((id: unknown) => typeof id === 'string' ? id : null));
+      }
+      if (data && Array.isArray(data.unavailable_ids)) {
+        setUnavailableIds(data.unavailable_ids.filter((id: unknown): id is string => typeof id === 'string'));
       }
       setDraftStateLoaded(true);
+    }, () => {
+      setDraftStateError('Unable to load draft. Check your connection and try again.');
     });
   }, [session]);
 
   useEffect(() => {
     if (!session || !draftStateLoaded) return;
-    AsyncStorage.setItem(`draft-hard-state:${session.user.id}`, JSON.stringify({ draftedIds, unavailableIds }));
+    supabase?.from('draft_states').upsert({
+      user_id: session.user.id,
+      drafted_ids: draftedIds,
+      unavailable_ids: unavailableIds,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'user_id' }).then(({ error }) => {
+      if (error) setDraftStateError(`Unable to save draft: ${error.message}`);
+    }, () => {
+      setDraftStateError('Unable to save draft. Check your connection and try again.');
+    });
   }, [draftStateLoaded, draftedIds, session, unavailableIds]);
 
   useEffect(() => {
@@ -297,6 +308,7 @@ export default function App() {
         <Text numberOfLines={1} ellipsizeMode="middle" style={styles.accountText}>{session.user.email ?? 'Account'}</Text>
         <Pressable onPress={handleSignOut} style={styles.signOutButton}><Text style={styles.signOutText}>SIGN OUT</Text></Pressable>
       </View>
+      {draftStateError ? <Text style={styles.draftStateError}>{draftStateError}</Text> : null}
       <View style={styles.header}>
         <View style={styles.headerCopy}>
           <Text style={styles.title}>Draft Hard</Text>
@@ -507,6 +519,7 @@ const styles = StyleSheet.create({
   setupNoteBody: { color: '#777b73', fontSize: 14, lineHeight: 20, marginTop: 6, maxWidth: 330 },
   accountBar: { paddingHorizontal: 24, paddingTop: 10, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12 },
   accountText: { color: '#777b73', flex: 1, fontSize: 10, fontWeight: '700', letterSpacing: 0.4 },
+  draftStateError: { color: '#b54e37', fontSize: 12, marginHorizontal: 24, marginTop: 6 },
   header: { paddingHorizontal: 24, paddingTop: 6, paddingBottom: 18, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
   headerCopy: { flex: 1, minWidth: 0, paddingRight: 12 },
   signOutButton: { flexShrink: 0, borderWidth: 1, borderColor: '#d4d3c9', borderRadius: 3, paddingHorizontal: 8, paddingVertical: 7 },
