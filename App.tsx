@@ -218,8 +218,8 @@ export default function App() {
           <>
       <View style={styles.header}>
         <View>
-          <Text style={styles.eyebrow}>SUNDAY LEAGUE  /  2025</Text>
-          <Text style={styles.title}>Draft Day</Text>
+          <Text style={styles.title}>Draft Hard</Text>
+          <Text style={styles.eyebrow}>Guess Confidently. Blame the Experts.</Text>
         </View>
         <Pressable onPress={handleSignOut} style={styles.signOutButton}><Text style={styles.signOutText}>SIGN OUT</Text></Pressable>
       </View>
