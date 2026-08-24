@@ -29,6 +29,13 @@ type Player = {
   accent: string;
 };
 
+type DraftClaim = {
+  player_id: string;
+  claimed_by: string;
+  roster_index: number | null;
+  claim_type: 'drafted' | 'unavailable';
+};
+
 const rosterSlots = ['QB', 'RB', 'RB', 'WR', 'WR', 'TE', 'WRT', 'K', 'DEF', 'BN', 'BN', 'BN', 'BN', 'BN', 'BN'];
 
 export default function App() {
@@ -46,9 +53,10 @@ export default function App() {
   const [query, setQuery] = useState('');
   const [availableOnly, setAvailableOnly] = useState(false);
   const [draftedIds, setDraftedIds] = useState<Array<string | null>>(() => Array(rosterSlots.length).fill(null));
-  const [unavailableIds, setUnavailableIds] = useState<string[]>([]);
+  const [sharedClaims, setSharedClaims] = useState<Record<string, DraftClaim>>({});
   const [draftStateLoaded, setDraftStateLoaded] = useState(false);
   const [draftStateError, setDraftStateError] = useState('');
+  const [draftActionBusy, setDraftActionBusy] = useState(false);
   const [players, setPlayers] = useState<Player[]>([]);
   const [playersLoading, setPlayersLoading] = useState(true);
   const [playersLoaded, setPlayersLoaded] = useState(false);
@@ -83,13 +91,26 @@ export default function App() {
       setPlayersLoaded(false);
 
       try {
-        const { data, error } = await client
+        let result = await client
           .from('fantasypros_rankings')
           .select('id, player_name, position, rank_ecr, rank_adp, payload')
           .eq('season', 2026)
           .eq('format', 'redraft')
           .eq('scoring', 'HALF')
           .order('rank_ecr', { ascending: true, nullsFirst: false });
+
+        if (isJwtIssuedAtFutureError(result.error)) {
+          await client.auth.refreshSession();
+          result = await client
+            .from('fantasypros_rankings')
+            .select('id, player_name, position, rank_ecr, rank_adp, payload')
+            .eq('season', 2026)
+            .eq('format', 'redraft')
+            .eq('scoring', 'HALF')
+            .order('rank_ecr', { ascending: true, nullsFirst: false });
+        }
+
+        const { data, error } = result;
 
         if (error) {
           setPlayersError(error.message);
@@ -127,43 +148,56 @@ export default function App() {
       setDraftStateLoaded(false);
       setDraftStateError('');
       setDraftedIds(Array(rosterSlots.length).fill(null));
-      setUnavailableIds([]);
+      setSharedClaims({});
       return;
     }
 
     const client = supabase;
     setDraftStateLoaded(false);
     setDraftStateError('');
-    client.from('draft_states').select('drafted_ids, unavailable_ids').eq('user_id', session.user.id).maybeSingle().then(({ data, error }) => {
+    const loadDraftClaims = async () => {
+      let result = await client
+        .from('draft_claims')
+        .select('player_id, claimed_by, roster_index, claim_type');
+
+      if (isJwtIssuedAtFutureError(result.error)) {
+        await client.auth.refreshSession();
+        result = await client
+          .from('draft_claims')
+          .select('player_id, claimed_by, roster_index, claim_type');
+      }
+
+      const { data, error } = result;
       if (error) {
         setDraftStateError(`Unable to load draft: ${error.message}`);
+        setDraftStateLoaded(true);
         return;
       }
-      if (data && Array.isArray(data.drafted_ids) && data.drafted_ids.length === rosterSlots.length) {
-        setDraftedIds(data.drafted_ids.map((id: unknown) => typeof id === 'string' ? id : null));
-      }
-      if (data && Array.isArray(data.unavailable_ids)) {
-        setUnavailableIds(data.unavailable_ids.filter((id: unknown): id is string => typeof id === 'string'));
-      }
-      setDraftStateLoaded(true);
-    }, () => {
-      setDraftStateError('Unable to load draft. Check your connection and try again.');
-    });
-  }, [session]);
 
-  useEffect(() => {
-    if (!session || !draftStateLoaded) return;
-    supabase?.from('draft_states').upsert({
-      user_id: session.user.id,
-      drafted_ids: draftedIds,
-      unavailable_ids: unavailableIds,
-      updated_at: new Date().toISOString(),
-    }, { onConflict: 'user_id' }).then(({ error }) => {
-      if (error) setDraftStateError(`Unable to save draft: ${error.message}`);
-    }, () => {
-      setDraftStateError('Unable to save draft. Check your connection and try again.');
-    });
-  }, [draftStateLoaded, draftedIds, session, unavailableIds]);
+      const claims = (data ?? []) as DraftClaim[];
+      const nextClaims = Object.fromEntries(claims.map((claim) => [claim.player_id, claim]));
+      const nextDraftedIds = Array<string | null>(rosterSlots.length).fill(null);
+      claims.forEach((claim) => {
+        if (claim.claimed_by === session.user.id && claim.claim_type === 'drafted' && claim.roster_index !== null && rosterSlots[claim.roster_index]) {
+          nextDraftedIds[claim.roster_index] = claim.player_id;
+        }
+      });
+      setSharedClaims(nextClaims);
+      setDraftedIds(nextDraftedIds);
+      setDraftStateLoaded(true);
+    };
+
+    loadDraftClaims();
+
+    const channel = client
+      .channel('shared-draft-claims')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'draft_claims' }, loadDraftClaims)
+      .subscribe();
+
+    return () => {
+      void client.removeChannel(channel);
+    };
+  }, [session]);
 
   useEffect(() => {
     if (session) {
@@ -223,45 +257,104 @@ export default function App() {
     () => players.filter((player) => {
       const matchesPosition = position === 'All' || player.position === position;
       const matchesQuery = player.name.toLowerCase().includes(query.toLowerCase());
-      const matchesAvailability = !availableOnly || (
-        !unavailableIds.includes(player.id) && !draftedIds.includes(player.id)
-      );
+      const matchesAvailability = !availableOnly || !sharedClaims[player.id];
       return matchesPosition && matchesQuery && matchesAvailability;
     }),
-    [availableOnly, draftedIds, players, position, query, unavailableIds],
+    [availableOnly, draftedIds, players, position, query, sharedClaims],
   );
 
-  const draftPlayer = (playerId: string) => {
-    if (draftedIds.includes(playerId)) return;
+  const draftPlayer = async (playerId: string) => {
+    if (draftActionBusy || sharedClaims[playerId]) return;
     const player = players.find((candidate) => candidate.id === playerId);
     if (!player) return;
 
-    setDraftedIds((current) => {
-      const openSlot = current.findIndex((draftedId, index) => (
-        draftedId === null && rosterSlotAcceptsPlayer(rosterSlots[index], player.position)
-      ));
-      if (openSlot === -1) return current;
+    const openSlot = draftedIds.findIndex((draftedId, index) => (
+      draftedId === null && rosterSlotAcceptsPlayer(rosterSlots[index], player.position)
+    ));
+    if (openSlot === -1 || !supabase || !session) return;
 
-      const next = [...current];
-      next[openSlot] = playerId;
-      return next;
+    setDraftActionBusy(true);
+    const { error } = await supabase.from('draft_claims').insert({
+      player_id: playerId,
+      claimed_by: session.user.id,
+      roster_index: openSlot,
+      claim_type: 'drafted',
     });
+    if (error) {
+      setDraftStateError(error.code === '23505' ? 'That player was just claimed by another drafter.' : `Unable to draft player: ${error.message}`);
+    } else {
+      setDraftedIds((current) => {
+        const next = [...current];
+        next[openSlot] = playerId;
+        return next;
+      });
+      setSharedClaims((current) => ({
+        ...current,
+        [playerId]: { player_id: playerId, claimed_by: session.user.id, roster_index: openSlot, claim_type: 'drafted' },
+      }));
+    }
+    setDraftActionBusy(false);
   };
 
-  const undraftPlayer = (rosterIndex: number) => {
-    setDraftedIds((current) => {
-      const next = [...current];
-      next[rosterIndex] = null;
-      return next;
+  const undraftPlayer = async (rosterIndex: number) => {
+    const playerId = draftedIds[rosterIndex];
+    if (draftActionBusy || !playerId || !supabase || !session) return;
+
+    setDraftActionBusy(true);
+    const { error } = await supabase.from('draft_claims').delete().eq('player_id', playerId).eq('claimed_by', session.user.id);
+    if (error) {
+      setDraftStateError(`Unable to undraft player: ${error.message}`);
+    } else {
+      setDraftedIds((current) => {
+        const next = [...current];
+        next[rosterIndex] = null;
+        return next;
+      });
+      setSharedClaims((current) => {
+        const next = { ...current };
+        delete next[playerId];
+        return next;
+      });
+    }
+    setDraftActionBusy(false);
+  };
+
+  const markUnavailable = async (playerId: string) => {
+    if (draftActionBusy || sharedClaims[playerId] || !supabase || !session) return;
+
+    setDraftActionBusy(true);
+    const { error } = await supabase.from('draft_claims').insert({
+      player_id: playerId,
+      claimed_by: session.user.id,
+      roster_index: null,
+      claim_type: 'unavailable',
     });
+    if (error) {
+      setDraftStateError(error.code === '23505' ? 'That player was just claimed by another drafter.' : `Unable to mark player taken: ${error.message}`);
+    } else {
+      setSharedClaims((current) => ({
+        ...current,
+        [playerId]: { player_id: playerId, claimed_by: session.user.id, roster_index: null, claim_type: 'unavailable' },
+      }));
+    }
+    setDraftActionBusy(false);
   };
 
-  const markUnavailable = (playerId: string) => {
-    setUnavailableIds((current) => current.includes(playerId) ? current : [...current, playerId]);
-  };
+  const markAvailable = async (playerId: string) => {
+    if (draftActionBusy || !supabase || !session) return;
 
-  const markAvailable = (playerId: string) => {
-    setUnavailableIds((current) => current.filter((id) => id !== playerId));
+    setDraftActionBusy(true);
+    const { error } = await supabase.from('draft_claims').delete().eq('player_id', playerId).eq('claimed_by', session.user.id);
+    if (error) {
+      setDraftStateError(`Unable to unmark player: ${error.message}`);
+    } else {
+      setSharedClaims((current) => {
+        const next = { ...current };
+        delete next[playerId];
+        return next;
+      });
+    }
+    setDraftActionBusy(false);
   };
 
   const openPlayerPage = (url: string) => {
@@ -399,12 +492,14 @@ export default function App() {
           <FlatList
             data={availablePlayers}
             keyExtractor={(item) => item.id}
-            extraData={[playersLoaded, playersLoading, playersError, position, query, availableOnly, unavailableIds, draftedIds]}
+            extraData={[playersLoaded, playersLoading, playersError, position, query, availableOnly, sharedClaims, draftedIds, draftActionBusy]}
             contentContainerStyle={styles.playerList}
             ListEmptyComponent={<View style={styles.playerState}><Text style={styles.playerStateText}>{!playersLoaded || playersLoading ? 'Loading rankings...' : playersError || 'No synced rankings found.'}</Text></View>}
             renderItem={({ item }) => {
               const isDrafted = draftedIds.includes(item.id);
-              const isUnavailable = unavailableIds.includes(item.id);
+              const claim = sharedClaims[item.id];
+              const isUnavailable = Boolean(claim) && !isDrafted;
+              const canUnmark = claim?.claim_type === 'unavailable' && claim.claimed_by === session.user.id;
               const hasOpenRosterSlot = draftedIds.some((draftedId, index) => (
                 draftedId === null && rosterSlotAcceptsPlayer(rosterSlots[index], item.position)
               ));
@@ -426,11 +521,15 @@ export default function App() {
                   {isDrafted ? (
                     <Pressable disabled style={[styles.draftButton, styles.draftedButton]}><Text style={styles.draftedButtonText}>DRAFTED</Text></Pressable>
                   ) : isUnavailable ? (
-                    <Pressable onPress={() => markAvailable(item.id)} style={styles.unavailableButton}><Text style={styles.unavailableButtonText}>UNMARK</Text></Pressable>
+                    canUnmark ? (
+                      <Pressable disabled={draftActionBusy} onPress={() => markAvailable(item.id)} style={styles.unavailableButton}><Text style={styles.unavailableButtonText}>UNMARK</Text></Pressable>
+                    ) : (
+                      <Pressable disabled style={[styles.unavailableButton, styles.disabledUnavailableButton]}><Text style={styles.unavailableButtonText}>TAKEN</Text></Pressable>
+                    )
                   ) : (
                     <View style={styles.playerActions}>
-                      <Pressable disabled={!hasOpenRosterSlot} onPress={() => draftPlayer(item.id)} style={[styles.draftButton, !hasOpenRosterSlot && styles.disabledDraftButton]}><Text style={styles.draftButtonText}>DRAFT</Text></Pressable>
-                      <Pressable onPress={() => markUnavailable(item.id)} style={styles.markUnavailableButton}><Text style={styles.markUnavailableButtonText}>TAKEN</Text></Pressable>
+                      <Pressable disabled={draftActionBusy || !hasOpenRosterSlot} onPress={() => draftPlayer(item.id)} style={[styles.draftButton, (!hasOpenRosterSlot || draftActionBusy) && styles.disabledDraftButton]}><Text style={styles.draftButtonText}>DRAFT</Text></Pressable>
+                      <Pressable disabled={draftActionBusy} onPress={() => markUnavailable(item.id)} style={styles.markUnavailableButton}><Text style={styles.markUnavailableButtonText}>TAKEN</Text></Pressable>
                     </View>
                   )}
                 </View>
@@ -610,11 +709,16 @@ const styles = StyleSheet.create({
   markUnavailableButton: { borderWidth: 1, borderColor: '#d4d3c9', borderRadius: 3, paddingHorizontal: 7, paddingVertical: 5 },
   markUnavailableButtonText: { color: '#b54e37', fontSize: 8, fontWeight: '800', letterSpacing: 0.4 },
   unavailableButton: { borderWidth: 1, borderColor: '#d4d3c9', borderRadius: 3, paddingHorizontal: 8, paddingVertical: 7 },
+  disabledUnavailableButton: { opacity: 0.55 },
   unavailableButtonText: { color: '#777b73', fontSize: 8, fontWeight: '800', letterSpacing: 0.4 },
 });
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
+}
+
+function isJwtIssuedAtFutureError(error: { message?: string } | null) {
+  return error?.message?.toLowerCase().includes('jwt issued at future') ?? false;
 }
 
 function teamFromPayload(payload: Record<string, unknown>) {

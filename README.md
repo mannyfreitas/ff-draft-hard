@@ -28,7 +28,7 @@ Planned tables for the next slice:
 
 ## FantasyPros sync
 
-The first backend slice is in `supabase/`. Run `supabase/migrations/20260820200000_create_fantasypros_rankings.sql` in the Supabase SQL Editor, then set the `FANTASYPROS_API_KEY` and a strong random `CRON_SECRET` with `supabase secrets set FANTASYPROS_API_KEY=... CRON_SECRET=...`. Deploy `supabase/functions/sync-fantasypros/index.ts` as the `sync-fantasypros` Edge Function with `supabase functions deploy sync-fantasypros --no-verify-jwt`; the function uses Supabase's built-in `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` secrets. Do not add those values to the Expo app.
+The first backend slice is in `supabase/`. Run `supabase/migrations/20260820200000_create_fantasypros_rankings.sql` and `supabase/migrations/20260822210000_create_shared_draft_claims.sql` in the Supabase SQL Editor, then set the `FANTASYPROS_API_KEY` and a strong random `CRON_SECRET` with `supabase secrets set FANTASYPROS_API_KEY=... CRON_SECRET=...`. Deploy `supabase/functions/sync-fantasypros/index.ts` as the `sync-fantasypros` Edge Function with `supabase functions deploy sync-fantasypros --no-verify-jwt`; the function uses Supabase's built-in `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` secrets. Do not add those values to the Expo app.
 
 After deployment, invoke it once manually with a JSON body such as:
 
