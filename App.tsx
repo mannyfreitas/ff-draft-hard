@@ -1,5 +1,5 @@
 import { StatusBar } from 'expo-status-bar';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import type { Session } from '@supabase/supabase-js';
 import {
@@ -61,6 +61,7 @@ export default function App() {
   const [playersLoading, setPlayersLoading] = useState(true);
   const [playersLoaded, setPlayersLoaded] = useState(false);
   const [playersError, setPlayersError] = useState('');
+  const initialViewSelected = useRef(false);
 
   useEffect(() => {
     if (!supabase) {
@@ -149,11 +150,13 @@ export default function App() {
       setDraftStateError('');
       setDraftedIds(Array(rosterSlots.length).fill(null));
       setSharedClaims({});
+      initialViewSelected.current = false;
       return;
     }
 
     const client = supabase;
     setDraftStateLoaded(false);
+    initialViewSelected.current = false;
     setDraftStateError('');
     const loadDraftClaims = async () => {
       let result = await client
@@ -200,10 +203,11 @@ export default function App() {
   }, [session]);
 
   useEffect(() => {
-    if (session) {
+    if (session && draftStateLoaded && !initialViewSelected.current) {
       setActiveView(draftedIds.some(Boolean) ? 'board' : 'players');
+      initialViewSelected.current = true;
     }
-  }, [draftedIds, session]);
+  }, [draftStateLoaded, session]);
 
   const handleAuth = async () => {
     if (!supabase) return;
