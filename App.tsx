@@ -32,8 +32,10 @@ type Player = {
 type DraftClaim = {
   player_id: string;
   claimed_by: string;
+  claimed_by_label: string | null;
   roster_index: number | null;
   claim_type: 'drafted' | 'unavailable';
+  created_at: string;
 };
 
 const rosterSlots = ['QB', 'RB', 'RB', 'WR', 'WR', 'TE', 'WRT', 'K', 'DEF', 'BN', 'BN', 'BN', 'BN', 'BN', 'BN'];
@@ -161,13 +163,13 @@ export default function App() {
     const loadDraftClaims = async () => {
       let result = await client
         .from('draft_claims')
-        .select('player_id, claimed_by, roster_index, claim_type');
+        .select('player_id, claimed_by, claimed_by_label, roster_index, claim_type, created_at');
 
       if (isJwtIssuedAtFutureError(result.error)) {
         await client.auth.refreshSession();
         result = await client
           .from('draft_claims')
-          .select('player_id, claimed_by, roster_index, claim_type');
+          .select('player_id, claimed_by, claimed_by_label, roster_index, claim_type, created_at');
       }
 
       const { data, error } = result;
@@ -267,6 +269,12 @@ export default function App() {
     [availableOnly, draftedIds, players, position, query, sharedClaims],
   );
 
+  const lastAction = useMemo(() => {
+    const claims = Object.values(sharedClaims);
+    if (claims.length === 0) return null;
+    return claims.reduce((latest, claim) => claim.created_at > latest.created_at ? claim : latest);
+  }, [sharedClaims]);
+
   const draftPlayer = async (playerId: string) => {
     if (draftActionBusy || sharedClaims[playerId]) return;
     const player = players.find((candidate) => candidate.id === playerId);
@@ -281,6 +289,7 @@ export default function App() {
     const { error } = await supabase.from('draft_claims').insert({
       player_id: playerId,
       claimed_by: session.user.id,
+      claimed_by_label: session.user.email ?? 'You',
       roster_index: openSlot,
       claim_type: 'drafted',
     });
@@ -294,7 +303,7 @@ export default function App() {
       });
       setSharedClaims((current) => ({
         ...current,
-        [playerId]: { player_id: playerId, claimed_by: session.user.id, roster_index: openSlot, claim_type: 'drafted' },
+        [playerId]: { player_id: playerId, claimed_by: session.user.id, claimed_by_label: session.user.email ?? 'You', roster_index: openSlot, claim_type: 'drafted', created_at: new Date().toISOString() },
       }));
     }
     setDraftActionBusy(false);
@@ -330,6 +339,7 @@ export default function App() {
     const { error } = await supabase.from('draft_claims').insert({
       player_id: playerId,
       claimed_by: session.user.id,
+      claimed_by_label: session.user.email ?? 'You',
       roster_index: null,
       claim_type: 'unavailable',
     });
@@ -338,7 +348,7 @@ export default function App() {
     } else {
       setSharedClaims((current) => ({
         ...current,
-        [playerId]: { player_id: playerId, claimed_by: session.user.id, roster_index: null, claim_type: 'unavailable' },
+        [playerId]: { player_id: playerId, claimed_by: session.user.id, claimed_by_label: session.user.email ?? 'You', roster_index: null, claim_type: 'unavailable', created_at: new Date().toISOString() },
       }));
     }
     setDraftActionBusy(false);
@@ -420,6 +430,14 @@ export default function App() {
           <Text style={[styles.eyebrow, styles.headerSubtitle]}>Guess Confidently.{"\n"}Blame the Experts.</Text>
         </View>
       </View>
+
+      {lastAction ? (() => {
+        const actionPlayer = players.find((player) => player.id === lastAction.player_id);
+        const actor = lastAction.claimed_by_label || (lastAction.claimed_by === session.user.id ? 'You' : 'Another drafter');
+        return actionPlayer ? (
+          <Text style={styles.lastAction}>{`Last action: ${actionPlayer.name} ${lastAction.claim_type === 'drafted' ? 'drafted' : 'marked taken'} by ${actor}`}</Text>
+        ) : null;
+      })() : null}
 
       <View style={styles.progressTrack}>
         <View style={[styles.progressFill, { width: `${(draftedIds.filter(Boolean).length / rosterSlots.length) * 100}%` }]} />
@@ -633,6 +651,7 @@ const styles = StyleSheet.create({
   setupNoteBody: { color: '#777b73', fontSize: 14, lineHeight: 20, marginTop: 6, maxWidth: 330 },
   accountBar: { paddingHorizontal: 24, paddingTop: 10, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12 },
   accountText: { color: '#777b73', flex: 1, fontSize: 10, fontWeight: '700', letterSpacing: 0.4 },
+  lastAction: { backgroundColor: '#e7eee5', color: '#527e5b', fontSize: 11, lineHeight: 16, marginHorizontal: 24, marginBottom: 16, paddingHorizontal: 10, paddingVertical: 8 },
   draftStateError: { color: '#b54e37', fontSize: 12, marginHorizontal: 24, marginTop: 6 },
   header: { paddingHorizontal: 24, paddingTop: 6, paddingBottom: 18, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
   headerCopy: { flex: 1, minWidth: 0, paddingRight: 12 },
@@ -646,7 +665,7 @@ const styles = StyleSheet.create({
   roundLabel: { color: '#bfd4c4', fontSize: 8, fontWeight: '700', letterSpacing: 1 },
   progressTrack: { height: 4, backgroundColor: '#d8d8cc', marginHorizontal: 24, borderRadius: 2 },
   progressFill: { height: 4, backgroundColor: '#d96b45', borderRadius: 2 },
-  progressMeta: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 24, paddingTop: 9, paddingBottom: 21 },
+  progressMeta: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 24, paddingTop: 9, paddingBottom: 18 },
   progressText: { color: '#777b73', fontSize: 12 },
   pickText: { color: '#d96b45', fontSize: 11, fontWeight: '800', letterSpacing: 0.8 },
   tabs: { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: '#dad8ce', paddingHorizontal: 24 },
